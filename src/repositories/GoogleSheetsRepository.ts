@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
-import type { RegistrationData } from '../types/registration';
-import type { RegistrationRepository } from './RegistrationRepository';
+import type { RegistrationData } from '../types/registration.js';
+import type { RegistrationRepository } from './RegistrationRepository.js';
 
 function getAuthClient() {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;

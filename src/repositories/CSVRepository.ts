@@ -1,8 +1,8 @@
 import Papa from 'papaparse';
 import { promises as fs } from 'fs';
 import path from 'path';
-import type { RegistrationData } from '../types/registration';
-import type { RegistrationRepository } from './RegistrationRepository';
+import type { RegistrationData } from '../types/registration.js';
+import type { RegistrationRepository } from './RegistrationRepository.js';
 
 const CSV_PATH = path.resolve(process.cwd(), 'cadastros.csv');
 
