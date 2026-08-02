@@ -1,0 +1,50 @@
+{
+  "name": "villagio-di-lux",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "serve:api": "API_PORT=4178 tsx server.ts",
+    "dev:all": "concurrently \"npm run serve:api\" \"npm run dev\"",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.1.0",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.19.0",
+    "googleapis": "^115.0.0",
+    "lucide-react": "^0.460.0",
+    "papaparse": "^5.4.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.59.9",
+    "zod": "^3.23.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.2",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^18.3.4",
+    "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/eslint-plugin": "^7.16.0",
+    "@typescript-eslint/parser": "^7.16.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^9.0.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.34.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "postcss": "^8.4.35",
+    "prettier": "^3.9.6",
+    "tailwindcss": "^3.4.4",
+    "tsx": "^4.14.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.1"
+  }
+}
