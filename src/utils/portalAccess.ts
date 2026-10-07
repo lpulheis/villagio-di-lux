@@ -23,6 +23,14 @@ export const adminRoutes = [
 
 const managementRoles: PortalRole[] = ['admin', 'sindico', 'zelador'];
 
+export const getNavigationItems = (role: PortalRole | null | undefined): string[] => {
+  if (role === 'admin' || role === 'sindico' || role === 'zelador') {
+    return ['/admin', '/admin/contatos', '/admin/horarios', '/admin/cronograma', '/admin/avisos', '/admin/apps'];
+  }
+
+  return residentRoutes;
+};
+
 export const normalizeRoute = (value: string): string => {
   const trimmed = (value ?? '').trim();
   if (!trimmed) return '/login';

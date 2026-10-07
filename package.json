@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "serve:api": "API_PORT=4178 tsx server.ts",
+    "serve:api": "API_PORT=4179 tsx server.ts",
     "dev:all": "concurrently \"npm run serve:api\" \"npm run dev\"",
+    "seed:supabase": "tsx scripts/create-supabase-users.ts",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx",

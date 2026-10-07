@@ -4,7 +4,7 @@ import { Button } from './components/ui/Button';
 import { Input } from './components/ui/Input';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { signInWithSupabase } from './services/supabaseAuth';
-import { canAccessRoute, normalizeRoute, type PortalRole } from './utils/portalAccess';
+import { canAccessRoute, getNavigationItems, normalizeRoute, type PortalRole } from './utils/portalAccess';
 import type { AppItem, ContactItem, DocumentItem, EventItem, NoticeItem, PortalConfig, PortalData, ProfessionalItem, ScheduleItem } from './types/portal';
 
 type Session = {
@@ -391,14 +391,48 @@ const normalizePortalData = (payload: Partial<PortalData> | null | undefined): P
   };
 };
 
-const fetchPortalData = async (): Promise<PortalData> => {
-  const response = await fetch('/api/portal');
-  if (!response.ok) {
-    throw new Error('Não foi possível carregar as informações do portal.');
+const persistPortalData = async (next: PortalData): Promise<void> => {
+  if (!hasSupabaseConfig || !supabase) {
+    return;
   }
 
-  const payload = await response.json();
-  return normalizePortalData(payload);
+  const { error } = await supabase
+    .from('portal_data')
+    .upsert({ slug: 'portal', payload: next }, { onConflict: 'slug' });
+
+  if (error) {
+    console.warn('Supabase portal persistence failed:', error.message);
+  }
+};
+
+const fetchPortalData = async (): Promise<PortalData> => {
+  if (hasSupabaseConfig && supabase) {
+    const { data, error } = await supabase
+      .from('portal_data')
+      .select('payload')
+      .eq('slug', 'portal')
+      .maybeSingle();
+
+    if (!error && data?.payload) {
+      return normalizePortalData(data.payload as Partial<PortalData>);
+    }
+
+    if (error) {
+      console.warn('Supabase portal query failed:', error.message);
+    }
+  }
+
+  try {
+    const response = await fetch('/api/portal');
+    if (!response.ok) {
+      return basePortalData;
+    }
+
+    const payload = await response.json();
+    return normalizePortalData(payload);
+  } catch {
+    return basePortalData;
+  }
 };
 
 const renderStatusBadge = (status: string) => (
@@ -554,35 +588,14 @@ function App() {
   };
 
   const authUser = async (credentials: { username: string; password: string }) => {
-    if (hasSupabaseConfig && supabase) {
-      const nextSession = await signInWithSupabase(credentials);
-      sessionStorage.setItem('villagio-session', JSON.stringify(nextSession));
-      setSession(nextSession);
-      navigate(managementRoles.includes(nextSession.role as PortalRole) ? '/admin' : '/inicio');
-      return;
+    if (!hasSupabaseConfig || !supabase) {
+      throw new Error('Supabase não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY antes de entrar.');
     }
 
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(credentials),
-    });
-
-    const payload = await response.json();
-
-    if (!response.ok) {
-      throw new Error(payload.message ?? 'Credenciais inválidas.');
-    }
-
-    const nextSession: Session = {
-      username: payload.user.username,
-      role: payload.user.role,
-      name: payload.user.name,
-    };
-
+    const nextSession = await signInWithSupabase(credentials);
     sessionStorage.setItem('villagio-session', JSON.stringify(nextSession));
     setSession(nextSession);
-    navigate(managementRoles.includes(payload.user.role) ? '/admin' : '/inicio');
+    navigate(managementRoles.includes(nextSession.role as PortalRole) ? '/admin' : '/inicio');
   };
 
   if (!session) {
@@ -619,7 +632,11 @@ function App() {
         )}
       </div>
 
-      {session.role === 'morador' && <BottomNavigation currentRoute={routeState.path} onNavigate={navigate} />}
+      {session.role === 'morador' ? (
+        <BottomNavigation currentRoute={routeState.path} onNavigate={navigate} />
+      ) : (
+        <AdminBottomNavigation currentRoute={routeState.path} onNavigate={navigate} />
+      )}
     </div>
   );
 }
@@ -798,6 +815,29 @@ function BottomNavigation({ currentRoute, onNavigate }: { currentRoute: string; 
       <div className="mx-auto grid max-w-lg grid-cols-5 gap-2">
         {items.map(({ label, icon: Icon, path }) => (
           <button key={path} onClick={() => onNavigate(path)} className={`flex flex-col items-center justify-center rounded-2xl gap-1 px-2 py-2 text-[10px] font-medium ${currentRoute === path ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600'}`}>
+            <Icon className="h-4 w-4" />
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function AdminBottomNavigation({ currentRoute, onNavigate }: { currentRoute: string; onNavigate: (path: string) => void }) {
+  const items = [
+    { label: 'Dashboard', icon: ShieldCheck, path: '/admin' },
+    { label: 'Contatos', icon: PhoneCall, path: '/admin/contatos' },
+    { label: 'Horários', icon: CalendarDays, path: '/admin/horarios' },
+    { label: 'Cronograma', icon: Bell, path: '/admin/cronograma' },
+    { label: 'Avisos', icon: FileText, path: '/admin/avisos' },
+  ];
+
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-2 shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur md:hidden">
+      <div className="mx-auto grid max-w-lg grid-cols-5 gap-2">
+        {items.map(({ label, icon: Icon, path }) => (
+          <button key={path} onClick={() => onNavigate(path)} className={`flex flex-col items-center justify-center rounded-2xl gap-1 px-2 py-2 text-[10px] font-medium ${currentRoute === path ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
             <Icon className="h-4 w-4" />
             <span>{label}</span>
           </button>
@@ -1005,6 +1045,8 @@ function AdminPages({ route, data, onNavigate, onRefresh, lastSyncedAt, onDataCh
     setResourceData(next);
     onDataChange(next);
 
+    await persistPortalData(next);
+
     await fetch(`/api/portal/${resource}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1058,6 +1100,7 @@ function AdminPages({ route, data, onNavigate, onRefresh, lastSyncedAt, onDataCh
       return <ConfigPage config={resourceData.config} onSave={async (config) => {
         const next = { ...resourceData, config };
         setResourceData(next);
+        await persistPortalData(next);
         await fetch('/api/portal/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -15,13 +15,22 @@ const normalizeRole = (role: string | undefined): PortalRole => {
   return 'morador';
 };
 
-const buildSupabaseEmail = (identifier: string): string => {
+const buildSupabaseEmailCandidates = (identifier: string): string[] => {
   const trimmed = identifier.trim();
   if (!trimmed) {
-    return '';
+    return [];
   }
 
-  return trimmed.includes('@') ? trimmed : `${trimmed}@villagio.com`;
+  if (trimmed.includes('@')) {
+    return [trimmed];
+  }
+
+  return [
+    trimmed,
+    `${trimmed}@villagio.com`,
+    `${trimmed}@villagiodilux.com.br`,
+    `${trimmed}@villagio.local`,
+  ];
 };
 
 export const signInWithSupabase = async (credentials: { username: string; password: string }): Promise<SupabaseSession> => {
@@ -31,29 +40,35 @@ export const signInWithSupabase = async (credentials: { username: string; passwo
 
   const identifier = credentials.username.trim();
   const password = credentials.password;
-  const email = buildSupabaseEmail(identifier);
+  const emailCandidates = buildSupabaseEmailCandidates(identifier);
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  let lastError: Error | null = null;
 
-  if (error) {
-    throw new Error(error.message ?? 'Credenciais inválidas.');
+  for (const email of emailCandidates) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+
+    if (!error && data.user) {
+      const user = data.user;
+      const role = normalizeRole(typeof user?.user_metadata?.role === 'string' ? user.user_metadata.role : undefined);
+      const username = typeof user?.user_metadata?.username === 'string'
+        ? user.user_metadata.username
+        : (user?.email ?? email).replace(/@.*$/, '');
+      const name = typeof user?.user_metadata?.full_name === 'string'
+        ? user.user_metadata.full_name
+        : (user?.email?.split('@')[0] ?? username);
+
+      return {
+        username,
+        role,
+        name,
+      };
+    }
+
+    lastError = new Error(error?.message ?? 'Credenciais inválidas.');
   }
 
-  const user = data.user;
-  const role = normalizeRole(typeof user?.user_metadata?.role === 'string' ? user.user_metadata.role : undefined);
-  const username = typeof user?.user_metadata?.username === 'string'
-    ? user.user_metadata.username
-    : (user?.email ?? email).replace(/@.*$/, '');
-  const name = typeof user?.user_metadata?.full_name === 'string'
-    ? user.user_metadata.full_name
-    : (user?.email?.split('@')[0] ?? username);
-
-  return {
-    username,
-    role,
-    name,
-  };
+  throw lastError ?? new Error('Credenciais inválidas.');
 };

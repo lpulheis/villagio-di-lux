@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { canAccessRoute, normalizeRoute } from './portalAccess.js';
+import { canAccessRoute, getNavigationItems, normalizeRoute } from './portalAccess.js';
 
 test('morador can access public resident routes only', () => {
   assert.equal(canAccessRoute('morador', '/inicio'), true);
@@ -25,4 +25,11 @@ test('zelador and sindico can manage notices and resident pages', () => {
 test('route normalization strips hash prefix', () => {
   assert.equal(normalizeRoute('#/admin/contatos'), '/admin/contatos');
   assert.equal(normalizeRoute('/inicio'), '/inicio');
+});
+
+test('management roles expose admin navigation items while residents keep public items', () => {
+  assert.ok(getNavigationItems('admin').includes('/admin/contatos'));
+  assert.ok(getNavigationItems('admin').includes('/admin'));
+  assert.ok(getNavigationItems('morador').includes('/inicio'));
+  assert.ok(!getNavigationItems('morador').includes('/admin/contatos'));
 });

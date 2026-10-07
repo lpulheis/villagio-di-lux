@@ -1,7 +1,13 @@
-import { describe, it } from 'node:test';
+import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import type { PortalData } from './types/portal';
-import { validateUserLogin } from '../server';
+
+let validateUserLogin: typeof import('../server').validateUserLogin;
+
+before(async () => {
+  process.env.NODE_ENV = 'test';
+  ({ validateUserLogin } = await import('../server'));
+});
 
 describe('Portal data model', () => {
   it('should expose a valid default portal config', () => {
@@ -38,14 +44,10 @@ describe('Portal data model', () => {
     assert.deepEqual(data.apps, []);
   });
 
-  it('should validate the built-in admin fallback credentials without Google Sheets', async () => {
+  it('should reject legacy fallback credentials when Supabase is the source of truth', async () => {
     const user = await validateUserLogin('admin', 'admin123');
 
-    assert.deepEqual(user, {
-      username: 'admin',
-      role: 'admin',
-      name: 'Administrador',
-    });
+    assert.equal(user, null);
   });
 
   it('should reject invalid fallback credentials', async () => {
