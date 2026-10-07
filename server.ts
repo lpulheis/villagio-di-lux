@@ -18,16 +18,21 @@ const hasSupabaseAuthConfig = Boolean(
   (process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL)
   && (process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY),
 );
+const hasGoogleConfig = Boolean(
+  process.env.GOOGLE_SHEETS_ID
+  && (process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE),
+);
 
 app.use(cors());
 app.use(express.json());
 
-const useSheets = process.env.USE_GOOGLE_SHEETS === 'true';
+const useSheets = process.env.USE_GOOGLE_SHEETS === 'true' && hasGoogleConfig && !hasSupabaseAuthConfig;
 console.log('[server] startup env', {
   useSheets,
   hasGoogleServiceAccountJson: Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
   hasGoogleServiceAccountKeyFile: Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE),
   googleSheetsId: process.env.GOOGLE_SHEETS_ID ?? null,
+  useSupabaseAuth: hasSupabaseAuthConfig,
   apiPort: port,
   cwd: process.cwd(),
 });
