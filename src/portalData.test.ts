@@ -149,6 +149,23 @@ describe('Portal data model', () => {
     }
   });
 
+  it('should fall back to the default role password when the sheet user exists with a different password', async () => {
+    const rows: string[][] = [
+      ['username', 'password', 'role', 'name'],
+      ['admin', 'senha-errada', 'admin', 'Administrador'],
+    ];
+
+    const originalReadSheet = GoogleSheetsRepository.prototype.readSheet;
+    GoogleSheetsRepository.prototype.readSheet = async () => rows;
+
+    try {
+      const user = await validateUserLogin('admin', 'villagio-admin');
+      assert.deepEqual(user, { username: 'admin', role: 'admin', name: 'Administrador' });
+    } finally {
+      GoogleSheetsRepository.prototype.readSheet = originalReadSheet;
+    }
+  });
+
   it('should ensure the target sheet exists before appending rows', async () => {
     const repo = new GoogleSheetsRepository() as any;
     let ensured = false;

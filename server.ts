@@ -476,11 +476,6 @@ const findUserInSheet = async (username: string): Promise<{ password: string; ro
 
 const resolvePassword = async (username: string): Promise<string> => {
   const normalized = username.trim().toLowerCase();
-  const sheetUser = await findUserInSheet(normalized);
-
-  if (sheetUser?.password) {
-    return sheetUser.password;
-  }
 
   const envKeyMap: Record<string, string> = {
     admin: 'PORTAL_ADMIN_PASSWORD',
