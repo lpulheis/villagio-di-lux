@@ -15,7 +15,7 @@ const normalizeRole = (role: string | undefined): PortalRole => {
   return 'morador';
 };
 
-const buildSupabaseEmailCandidates = (identifier: string): string[] => {
+export const buildSupabaseEmailCandidates = (identifier: string): string[] => {
   const trimmed = identifier.trim();
   if (!trimmed) {
     return [];
@@ -25,12 +25,13 @@ const buildSupabaseEmailCandidates = (identifier: string): string[] => {
     return [trimmed];
   }
 
-  return [
-    trimmed,
-    `${trimmed}@villagio.com`,
-    `${trimmed}@villagiodilux.com.br`,
-    `${trimmed}@villagio.local`,
-  ];
+  const normalized = trimmed.toLowerCase();
+  return Array.from(new Set([
+    normalized,
+    `${normalized}@villagiodilux.com.br`,
+    `${normalized}@villagio.com`,
+    `${normalized}@villagio.local`,
+  ]));
 };
 
 export const signInWithSupabase = async (credentials: { username: string; password: string }): Promise<SupabaseSession> => {

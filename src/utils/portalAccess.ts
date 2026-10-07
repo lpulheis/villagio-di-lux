@@ -6,17 +6,14 @@ export const residentRoutes = [
   '/horarios',
   '/cronograma',
   '/contatos',
-  '/avisos',
   '/apps',
 ];
 
 export const adminRoutes = [
   '/admin',
-  '/admin/dashboard',
   '/admin/contatos',
   '/admin/horarios',
   '/admin/cronograma',
-  '/admin/avisos',
   '/admin/apps',
   '/admin/configuracoes',
 ];
@@ -25,10 +22,10 @@ const managementRoles: PortalRole[] = ['admin', 'sindico', 'zelador'];
 
 export const getNavigationItems = (role: PortalRole | null | undefined): string[] => {
   if (role === 'admin' || role === 'sindico' || role === 'zelador') {
-    return ['/admin', '/admin/contatos', '/admin/horarios', '/admin/cronograma', '/admin/avisos', '/admin/apps'];
+    return ['/admin', '/admin/horarios', '/admin/cronograma', '/admin/contatos', '/admin/apps'];
   }
 
-  return residentRoutes;
+  return ['/inicio', '/horarios', '/cronograma', '/contatos', '/apps'];
 };
 
 export const normalizeRoute = (value: string): string => {
@@ -48,7 +45,11 @@ export const canAccessRoute = (role: PortalRole | null | undefined, route: strin
   }
 
   if (role === 'admin') {
-    return [...residentRoutes, ...adminRoutes].includes(normalized) || normalized.startsWith('/admin');
+    if (normalized.startsWith('/admin')) {
+      return adminRoutes.includes(normalized);
+    }
+
+    return residentRoutes.includes(normalized);
   }
 
   if (managementRoles.includes(role as PortalRole)) {
@@ -56,7 +57,7 @@ export const canAccessRoute = (role: PortalRole | null | undefined, route: strin
       return false;
     }
 
-    const allowedManagementRoutes = ['/admin', '/admin/dashboard', '/admin/contatos', '/admin/horarios', '/admin/cronograma', '/admin/avisos', '/admin/apps'];
+    const allowedManagementRoutes = ['/admin', '/admin/contatos', '/admin/horarios', '/admin/cronograma', '/admin/apps'];
     if (normalized.startsWith('/admin')) {
       return allowedManagementRoutes.includes(normalized);
     }

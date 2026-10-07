@@ -677,7 +677,10 @@ function LoginPage({ onSubmit }: { onSubmit: (credentials: { username: string; p
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <Input label="Usuário" value={username} onChange={(event) => setUsername(event.target.value)} />
+          <div className="space-y-2">
+            <Input label="Usuário" placeholder="morador, admin, sindico ou zelador" value={username} onChange={(event) => setUsername(event.target.value)} />
+            <p className="text-xs text-slate-500">Você pode usar o perfil ou o e-mail completo.</p>
+          </div>
           <Input label="Senha" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
           {error && <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
           <Button type="submit" className="w-full" disabled={isSubmitting}>
@@ -752,7 +755,6 @@ function ResidentNav({ currentRoute, onNavigate, compact = false }: { currentRou
     { label: 'Horários', path: '/horarios' },
     { label: 'Cronograma', path: '/cronograma' },
     { label: 'Contatos', path: '/contatos' },
-    { label: 'Avisos', path: '/avisos' },
     { label: 'Apps', path: '/apps' },
   ];
 
@@ -775,13 +777,11 @@ function ResidentNav({ currentRoute, onNavigate, compact = false }: { currentRou
 
 function AdminNav({ currentRoute, onNavigate, compact = false }: { currentRoute: string; onNavigate: (path: string) => void; compact?: boolean }) {
   const items = [
-    { label: 'Dashboard', path: '/admin' },
-    { label: 'Contatos', path: '/admin/contatos' },
+    { label: 'Início', path: '/admin' },
     { label: 'Horários', path: '/admin/horarios' },
     { label: 'Cronograma', path: '/admin/cronograma' },
-    { label: 'Avisos', path: '/admin/avisos' },
+    { label: 'Contatos', path: '/admin/contatos' },
     { label: 'Apps', path: '/admin/apps' },
-    { label: 'Configurações', path: '/admin/configuracoes' },
   ];
 
   return (
@@ -826,11 +826,11 @@ function BottomNavigation({ currentRoute, onNavigate }: { currentRoute: string; 
 
 function AdminBottomNavigation({ currentRoute, onNavigate }: { currentRoute: string; onNavigate: (path: string) => void }) {
   const items = [
-    { label: 'Dashboard', icon: ShieldCheck, path: '/admin' },
-    { label: 'Contatos', icon: PhoneCall, path: '/admin/contatos' },
+    { label: 'Início', icon: Home, path: '/admin' },
     { label: 'Horários', icon: CalendarDays, path: '/admin/horarios' },
     { label: 'Cronograma', icon: Bell, path: '/admin/cronograma' },
-    { label: 'Avisos', icon: FileText, path: '/admin/avisos' },
+    { label: 'Contatos', icon: PhoneCall, path: '/admin/contatos' },
+    { label: 'Apps', icon: Smartphone, path: '/admin/apps' },
   ];
 
   return (
@@ -1060,42 +1060,6 @@ function AdminPages({ route, data, onNavigate, onRefresh, lastSyncedAt, onDataCh
 
   switch (route) {
     case '/admin':
-      return (
-        <div className="space-y-6">
-          <SectionHeader title="PAINEL ADMINISTRATIVO" subtitle="Resumo da operação do condomínio" />
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <InfoCard icon={<Users className="h-5 w-5" />} title="Contatos" value={String(resourceData.contacts.length)} description="cadastros ativos" />
-            <InfoCard icon={<CalendarDays className="h-5 w-5" />} title="Cronograma" value={String(resourceData.events.length)} description="eventos cadastrados" />
-            <InfoCard icon={<Smartphone className="h-5 w-5" />} title="Apps" value={String(resourceData.apps.length)} description="links disponíveis" />
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Card title="Status do portal">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                  <RefreshCcw className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-800">Última sincronização</p>
-                  <p className="truncate text-xs text-slate-500">{formatLastSync(lastSyncedAt)}</p>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </div>
-      );
-
-    case '/admin/contatos':
-      return <AdminCrudPage resource="contacts" title="Contatos" data={resourceData.contacts as ContactItem[]} onSave={async (items) => updateResource('contacts', items)} />;
-    case '/admin/horarios':
-      return <AdminCrudPage resource="schedules" title="Horários" data={resourceData.schedules as ScheduleItem[]} onSave={async (items) => updateResource('schedules', items)} />;
-    case '/admin/cronograma':
-      return <AdminCrudPage resource="events" title="Cronograma" data={resourceData.events as EventItem[]} onSave={async (items) => updateResource('events', items)} />;
-    case '/admin/avisos':
-      return <AdminCrudPage resource="notices" title="Avisos" data={resourceData.notices as NoticeItem[]} onSave={async (items) => updateResource('notices', items)} />;
-    case '/admin/apps':
-      return <AdminCrudPage resource="apps" title="Apps" data={resourceData.apps as AppItem[]} onSave={async (items) => updateResource('apps', items)} />;
-    case '/admin/documentos':
-      return <AdminCrudPage resource="documents" title="Documentos" data={resourceData.documents as DocumentItem[]} onSave={async (items) => updateResource('documents', items)} />;
     case '/admin/configuracoes':
       return <ConfigPage config={resourceData.config} onSave={async (config) => {
         const next = { ...resourceData, config };
@@ -1108,6 +1072,17 @@ function AdminPages({ route, data, onNavigate, onRefresh, lastSyncedAt, onDataCh
         });
         await onRefresh();
       }} />;
+
+    case '/admin/contatos':
+      return <AdminCrudPage resource="contacts" title="Contatos" data={resourceData.contacts as ContactItem[]} onSave={async (items) => updateResource('contacts', items)} />;
+    case '/admin/horarios':
+      return <AdminCrudPage resource="schedules" title="Horários" data={resourceData.schedules as ScheduleItem[]} onSave={async (items) => updateResource('schedules', items)} />;
+    case '/admin/cronograma':
+      return <AdminCrudPage resource="events" title="Cronograma" data={resourceData.events as EventItem[]} onSave={async (items) => updateResource('events', items)} />;
+    case '/admin/apps':
+      return <AdminCrudPage resource="apps" title="Apps" data={resourceData.apps as AppItem[]} onSave={async (items) => updateResource('apps', items)} />;
+    case '/admin/documentos':
+      return <AdminCrudPage resource="documents" title="Documentos" data={resourceData.documents as DocumentItem[]} onSave={async (items) => updateResource('documents', items)} />;
     default:
       return <div />;
   }

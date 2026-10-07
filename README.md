@@ -11,7 +11,8 @@ Aplicação web minimalista para cadastro de moradores e envio de convites de ac
 - React Hook Form
 - Zod
 - Lucide React
-- Papa Parse
+- Supabase Auth
+- Supabase Postgres
 - ESLint
 - Prettier
 
@@ -50,68 +51,50 @@ npm run build
 
 1. Criar repositório no GitHub.
 2. Conectar o repositório ao Vercel.
-3. O Vercel detecta automaticamente o projeto Vite.
-4. Definir `npm run build` como comando de build e `dist` como diretório de saída.
-5. Configurar as variáveis de ambiente do projeto no painel do Vercel.
+3. Definir `npm run build` como comando de build e `dist` como diretório de saída.
+4. Configurar as variáveis de ambiente do projeto no painel do Vercel.
 
-### Variáveis de ambiente do Vercel
+### Variáveis de ambiente
 
-Para produção, mantenha o Google Sheets como base de dados e nunca deixe credenciais no código-fonte.
-
-```bash
-USE_GOOGLE_SHEETS=true
-GOOGLE_SHEETS_ID=SEU_ID_DA_PLANILHA
-GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
-```
-
-A variável `GOOGLE_SERVICE_ACCOUNT_JSON` deve receber o conteúdo completo do arquivo JSON do service account do Google.
-
-Para desenvolvimento local, também é aceito:
+Use somente as credenciais do Supabase e mantenha segredos fora do código-fonte.
 
 ```bash
-GOOGLE_SERVICE_ACCOUNT_KEYFILE=./credentials/service-account.json
+VITE_SUPABASE_URL=https://SEU_PROJETO.supabase.co
+VITE_SUPABASE_ANON_KEY=SEU_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=SEU_SERVICE_ROLE_KEY
 ```
+
+A variável `SUPABASE_SERVICE_ROLE_KEY` deve ficar apenas no ambiente do servidor e nunca no frontend.
 
 ### Segurança
 
-- Nunca commitar o arquivo `credentials/service-account.json` em repositório público.
-- Não usar senha fixa no frontend.
-- Mantém o login no backend e os usuários na aba `USUARIOS` do Sheets.
-- O frontend só envia username/password; o servidor valida no backend.
+- Nunca commitar arquivos `.env`, `.env.local` ou chaves de produção.
+- Não armazenar credenciais em repositórios públicos.
+- O login usa autenticação do Supabase e a app não depende de Google Sheets, CSV ou service accounts.
+- O frontend envia usuário e senha; a validação e o controle de sessão ficam no backend do Supabase.
 
 ## Estrutura do projeto
 
-```
+```text
+api/
+public/
 src/
   components/
     ui/
   hooks/
+  lib/
+  pages/
   repositories/
   services/
   types/
-  utils/
   styles/
-public/
-cadastros.csv
-server.js
+  utils/
+server.ts
 vite.config.ts
 ```
 
-## Integração com Google Sheets
-
-A arquitetura usa um repositório (`RegistrationRepository`) com implementações diferentes:
-
-- `CSVRepository`: usa arquivo local `cadastros.csv` para desenvolvimento.
-- `GoogleSheetsRepository`: preparado para substituição em produção.
-
-Para ativar o Google Sheets futuramente:
-
-1. Implementar `findByEmail` e `save` em `src/repositories/GoogleSheetsRepository.ts`.
-2. Adicionar variáveis de ambiente para `GOOGLE_SHEETS_API_KEY`, `GOOGLE_SHEET_ID` e outras credenciais.
-3. Utilizar a instância do repositório no serviço de cadastro.
-
 ## Observações
 
+- A base de dados oficial do portal é o Supabase.
 - O fluxo mobile-first prioriza clareza e simplicidade.
-- O formulário exibe uma mensagem informativa quando o aplicativo Tuya Smart não está instalado.
-- O cadastro não permite envio duplicado de e-mails mesmo com nomes ou casas diferentes.
+- O painel administrativo é acessado por roles do Supabase e não depende de arquivos locais.
