@@ -1,31 +1,32 @@
+import { existsSync } from 'fs';
+import path from 'path';
 import { google } from 'googleapis';
-import type { RegistrationData } from '../types/registration.js';
-import type { RegistrationRepository } from './RegistrationRepository.js';
+import type { RegistrationData } from '../types/registration.ts';
+import type { RegistrationRepository } from './RegistrationRepository.ts';
 
 function getAuthClient() {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE;
 
-  console.log('Google Sheets Auth:', {
-    hasJsonCredentials: !!credentials,
-    hasKeyFile: !!keyFile,
-  });
-
   if (!credentials && !keyFile) {
-    throw new Error(
-      'Provide GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_KEYFILE in env'
-    );
+    throw new Error('Provide GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_KEYFILE in env');
   }
 
-  let parsedCredentials;
+  let parsedCredentials: Record<string, unknown> | undefined;
 
   if (credentials) {
     try {
       parsedCredentials = JSON.parse(credentials);
-    } catch (error) {
-      throw new Error(
-        'GOOGLE_SERVICE_ACCOUNT_JSON is not a valid JSON'
-      );
+    } catch {
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is not a valid JSON');
+    }
+  }
+
+  if (!parsedCredentials && keyFile) {
+    const resolvedKeyFile = path.resolve(process.cwd(), keyFile);
+
+    if (!existsSync(resolvedKeyFile)) {
+      throw new Error(`GOOGLE_SERVICE_ACCOUNT_KEYFILE points to a missing file: ${resolvedKeyFile}`);
     }
   }
 
@@ -48,26 +49,105 @@ export class GoogleSheetsRepository implements RegistrationRepository {
       auth,
     });
 
-    this.sheetId =
-      process.env.GOOGLE_SHEETS_ID ??
-      '1ikVXcPU9U7Sga7_1IqSIwV2s1wtQ8aB6Dh2MiH3Gedw';
+    this.sheetId = process.env.GOOGLE_SHEETS_ID ?? '1ikVXcPU9U7Sga7_1IqSIwV2s1wtQ8aB6Dh2MiH3Gedw';
 
     if (!this.sheetId) {
       throw new Error('Missing GOOGLE_SHEETS_ID env var');
     }
+  }
 
-    console.log('Google Sheets ID carregado:', this.sheetId);
+  async ensureSheetExists(sheetName: string): Promise<void> {
+    const metadata = await this.sheets.spreadsheets.get({
+      spreadsheetId: this.sheetId,
+    });
+
+    const exists = metadata.data.sheets?.some((sheet: any) => sheet.properties?.title === sheetName);
+
+    if (exists) {
+      return;
+    }
+
+    await this.sheets.spreadsheets.batchUpdate({
+      spreadsheetId: this.sheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: sheetName,
+              },
+            },
+          },
+        ],
+      },
+    });
+  }
+
+  async readSheet(sheetName: string): Promise<string[][]> {
+    try {
+      const res = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.sheetId,
+        range: `${sheetName}!A:Z`,
+      });
+
+      return res.data.values ?? [];
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/Unable to parse range|not found|does not exist|INVALID_ARGUMENT/i.test(message)) {
+        await this.ensureSheetExists(sheetName);
+        const res = await this.sheets.spreadsheets.values.get({
+          spreadsheetId: this.sheetId,
+          range: `${sheetName}!A:Z`,
+        });
+        return res.data.values ?? [];
+      }
+
+      throw error;
+    }
+  }
+
+  async writeSheet(sheetName: string, rows: string[][]): Promise<void> {
+    await this.ensureSheetExists(sheetName);
+
+    await this.sheets.spreadsheets.values.clear({
+      spreadsheetId: this.sheetId,
+      range: `${sheetName}!A:Z`,
+    });
+
+    if (!rows.length) {
+      return;
+    }
+
+    await this.sheets.spreadsheets.values.update({
+      spreadsheetId: this.sheetId,
+      range: `${sheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: rows,
+      },
+    });
+  }
+
+  async appendRows(sheetName: string, rows: string[][]): Promise<void> {
+    if (!rows.length) {
+      return;
+    }
+
+    await this.sheets.spreadsheets.values.append({
+      spreadsheetId: this.sheetId,
+      range: `${sheetName}!A:Z`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: rows,
+      },
+    });
   }
 
   async findByEmail(email: string): Promise<boolean> {
     const normalized = email.trim().toLowerCase();
 
-    const res = await this.sheets.spreadsheets.values.get({
-      spreadsheetId: this.sheetId,
-      range: 'A:D',
-    });
-
-    const rows = res.data.values ?? [];
+    const rows = await this.readSheet('CADASTROS');
 
     for (const row of rows) {
       const rowEmail = (row[3] || '')
@@ -91,14 +171,6 @@ export class GoogleSheetsRepository implements RegistrationRepository {
       r.email,
     ]);
 
-    await this.sheets.spreadsheets.values.append({
-      spreadsheetId: this.sheetId,
-      range: 'A:D',
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: {
-        values,
-      },
-    });
+    await this.appendRows('CADASTROS', values);
   }
 }

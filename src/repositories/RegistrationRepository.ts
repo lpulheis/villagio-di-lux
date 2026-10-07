@@ -1,4 +1,4 @@
-import type { RegistrationData } from '../types/registration.js';
+import type { RegistrationData } from '../types/registration.ts';
 
 export interface RegistrationRepository {
   findByEmail(email: string): Promise<boolean>;

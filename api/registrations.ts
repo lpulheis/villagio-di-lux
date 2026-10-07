@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-import { RegistrationService } from '../src/services/registrationService.js';
-import { CSVRepository } from '../src/repositories/CSVRepository.js';
-import { GoogleSheetsRepository } from '../src/repositories/GoogleSheetsRepository.js';
+import { RegistrationService } from '../src/services/registrationService.ts';
+import { CSVRepository } from '../src/repositories/CSVRepository.ts';
+import { GoogleSheetsRepository } from '../src/repositories/GoogleSheetsRepository.ts';
 
 export default async function handler(
   req: VercelRequest,

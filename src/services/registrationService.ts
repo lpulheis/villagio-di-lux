@@ -1,6 +1,6 @@
-import { normalizeEmail } from '../utils/email.js';
-import type { RegistrationData } from '../types/registration.js';
-import type { RegistrationRepository } from '../repositories/RegistrationRepository.js';
+import { normalizeEmail } from '../utils/email.ts';
+import type { RegistrationData } from '../types/registration.ts';
+import type { RegistrationRepository } from '../repositories/RegistrationRepository.ts';
 
 export class RegistrationService {
   constructor(private repository: RegistrationRepository) {}

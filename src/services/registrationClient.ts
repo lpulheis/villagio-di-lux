@@ -1,4 +1,4 @@
-import type { RegistrationData } from '../types/registration.js';
+import type { RegistrationData } from '../types/registration.ts';
 
 export const submitRegistration = async (registrationData: RegistrationData) => {
   const response = await fetch('/api/registrations', {
