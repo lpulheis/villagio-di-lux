@@ -1,68 +1,35 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-
 import { RegistrationService } from '../src/services/registrationService.ts';
-import { CSVRepository } from '../src/repositories/CSVRepository.ts';
-import { GoogleSheetsRepository } from '../src/repositories/GoogleSheetsRepository.ts';
+import type { RegistrationRepository } from '../src/repositories/RegistrationRepository.ts';
+import type { RegistrationData } from '../src/types/registration.ts';
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse
-) {
-  console.log('API registrations iniciada');
-  console.log('Método:', req.method);
+class InMemoryRegistrationRepository implements RegistrationRepository {
+  private readonly emails = new Set<string>();
 
+  async findByEmail(email: string): Promise<boolean> {
+    return this.emails.has(email.trim().toLowerCase());
+  }
+
+  async save(registrationData: RegistrationData): Promise<void> {
+    for (const resident of registrationData.residents) {
+      this.emails.add(resident.email.trim().toLowerCase());
+    }
+  }
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
-    return res.status(405).json({
-      message: 'Method not allowed',
-    });
+    return res.status(405).json({ message: 'Method not allowed' });
   }
 
   try {
-    const useSheets = process.env.USE_GOOGLE_SHEETS === 'true';
-
-    console.log('USE_GOOGLE_SHEETS:', useSheets);
-    console.log(
-      'GOOGLE_SERVICE_ACCOUNT_JSON existe:',
-      !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-    );
-    console.log(
-      'GOOGLE_SHEETS_ID existe:',
-      !!process.env.GOOGLE_SHEETS_ID
-    );
-
-    const repository = useSheets
-      ? new GoogleSheetsRepository()
-      : new CSVRepository();
-
-    console.log('Repository criado');
-
+    const repository = new InMemoryRegistrationRepository();
     const service = new RegistrationService(repository);
+    await service.submit(req.body as RegistrationData);
 
-    await service.submit(req.body);
-
-    console.log('Cadastro salvo com sucesso');
-
-    return res.status(201).json({
-      message: 'Cadastro registrado com sucesso.',
-    });
-
+    return res.status(201).json({ message: 'Cadastro registrado com sucesso.' });
   } catch (error) {
-    console.error('ERRO COMPLETO:', error);
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Erro ao processar cadastro.';
-
-    const statusCode =
-      message.includes('já possui') ||
-      message.includes('repetido') ||
-      message.includes('está repetido')
-        ? 400
-        : 500;
-
-    return res.status(statusCode).json({
-      message,
-    });
+    const message = error instanceof Error ? error.message : 'Erro ao processar cadastro.';
+    return res.status(400).json({ message });
   }
 }
