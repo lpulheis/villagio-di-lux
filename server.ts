@@ -14,6 +14,11 @@ import { getSheetNameForResource } from './src/utils/portalSheetMap.js';
 export const app = express();
 const port = Number(process.env.API_PORT ?? 4178);
 
+const hasSupabaseAuthConfig = Boolean(
+  (process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL)
+  && (process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY),
+);
+
 app.use(cors());
 app.use(express.json());
 
@@ -499,6 +504,10 @@ export const validateUserLogin = async (username: string, password: string): Pro
   const normalized = username.trim().toLowerCase();
 
   if (!normalized || !password) {
+    return null;
+  }
+
+  if (hasSupabaseAuthConfig) {
     return null;
   }
 

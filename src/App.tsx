@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import { Bell, CalendarDays, CheckCircle2, FileText, Home, KeyRound, LogOut, Menu, PhoneCall, RefreshCcw, Settings, ShieldCheck, Smartphone, UserRound, Users, Wrench, X } from 'lucide-react';
 import { Button } from './components/ui/Button';
 import { Input } from './components/ui/Input';
+import { hasSupabaseConfig, supabase } from './lib/supabase';
+import { signInWithSupabase } from './services/supabaseAuth';
 import { canAccessRoute, normalizeRoute, type PortalRole } from './utils/portalAccess';
 import type { AppItem, ContactItem, DocumentItem, EventItem, NoticeItem, PortalConfig, PortalData, ProfessionalItem, ScheduleItem } from './types/portal';
 
@@ -451,6 +453,50 @@ function App() {
   }, [syncPortalData]);
 
   useEffect(() => {
+    const client = supabase;
+
+    if (!hasSupabaseConfig || !client) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const hydrateSupabaseSession = async () => {
+      const { data } = await client.auth.getSession();
+      if (!isMounted || !data.session?.user) {
+        return;
+      }
+
+      const user = data.session.user;
+      const role = typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : 'morador';
+      const username = typeof user.user_metadata?.username === 'string' ? user.user_metadata.username : (user.email ?? 'usuario');
+      const name = typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : (user.email?.split('@')[0] ?? 'Usuário');
+
+      setSession({ username, role: role as PortalRole, name });
+    };
+
+    hydrateSupabaseSession();
+
+    const { data: authListener } = client.auth.onAuthStateChange((_event, nextSession) => {
+      if (!nextSession?.user || !isMounted) {
+        return;
+      }
+
+      const user = nextSession.user;
+      const role = typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : 'morador';
+      const username = typeof user.user_metadata?.username === 'string' ? user.user_metadata.username : (user.email ?? 'usuario');
+      const name = typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : (user.email?.split('@')[0] ?? 'Usuário');
+
+      setSession({ username, role: role as PortalRole, name });
+    });
+
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     const onHashChange = () => {
       const nextPath = normalizeRoute(window.location.hash || '#/login');
       setRouteState((current) => ({ ...current, path: nextPath }));
@@ -496,7 +542,11 @@ function App() {
     setRouteState((current) => ({ ...current, path: nextPath, openMenu: false }));
   };
 
-  const logout = () => {
+  const logout = async () => {
+    if (hasSupabaseConfig && supabase) {
+      await supabase.auth.signOut();
+    }
+
     sessionStorage.removeItem('villagio-session');
     setSession(null);
     setRouteState({ path: '/login', openMenu: false });
@@ -504,6 +554,14 @@ function App() {
   };
 
   const authUser = async (credentials: { username: string; password: string }) => {
+    if (hasSupabaseConfig && supabase) {
+      const nextSession = await signInWithSupabase(credentials);
+      sessionStorage.setItem('villagio-session', JSON.stringify(nextSession));
+      setSession(nextSession);
+      navigate(managementRoles.includes(nextSession.role as PortalRole) ? '/admin' : '/inicio');
+      return;
+    }
+
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
