@@ -7,7 +7,7 @@ import type { RegistrationData } from './src/types/registration.ts';
 export const app = express();
 const port = Number(process.env.API_PORT ?? 4178);
 
-const portalState = {
+const portalState: Record<string, unknown> = {
   config: {
     condominiumName: 'VILLAGIO DI LUX',
     cnpj: '59.271.694/0001-44',
@@ -54,7 +54,7 @@ const portalState = {
       iosLink: 'https://apps.apple.com',
     },
   ],
-} as const;
+};
 
 class InMemoryRegistrationRepository implements RegistrationRepository {
   private readonly emails = new Set<string>();
