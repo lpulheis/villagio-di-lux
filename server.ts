@@ -11,7 +11,7 @@ import { CSVRepository } from './src/repositories/CSVRepository.js';
 import { GoogleSheetsRepository } from './src/repositories/GoogleSheetsRepository.js';
 import { getSheetNameForResource } from './src/utils/portalSheetMap.js';
 
-const app = express();
+export const app = express();
 const port = Number(process.env.API_PORT ?? 4178);
 
 app.use(cors());
