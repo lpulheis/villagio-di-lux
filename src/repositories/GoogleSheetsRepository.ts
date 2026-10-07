@@ -8,15 +8,12 @@ function getAuthClient() {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE;
 
-  console.log('[google-auth] starting auth config', {
-    hasJson: Boolean(credentials),
-    hasKeyFile: Boolean(keyFile),
-    keyFile: keyFile ?? null,
-    googleSheetsId: process.env.GOOGLE_SHEETS_ID ?? null,
-  });
+  console.log('GOOGLE_SERVICE_ACCOUNT_JSON existe:', !!credentials);
+  console.log('GOOGLE_SERVICE_ACCOUNT_JSON tamanho:', credentials?.length);
+  console.log('GOOGLE_SHEETS_ID existe:', !!process.env.GOOGLE_SHEETS_ID);
+  console.log('USE_GOOGLE_SHEETS:', process.env.USE_GOOGLE_SHEETS);
 
   if (!credentials && !keyFile) {
-    console.error('[google-auth] missing credentials env values');
     throw new Error('Provide GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_KEYFILE in env');
   }
 
@@ -25,17 +22,13 @@ function getAuthClient() {
   if (credentials) {
     try {
       parsedCredentials = JSON.parse(credentials);
-      console.log('[google-auth] JSON parsed successfully', {
-        keys: Object.keys(parsedCredentials ?? {}),
-        hasPrivateKey: Boolean(parsedCredentials?.private_key),
-        projectId: parsedCredentials?.project_id ?? null,
-      });
+
+      console.log('Service Account project:', parsedCredentials?.project_id);
+      console.log('Service Account email:', parsedCredentials?.client_email);
+      console.log('Private key existe:', !!parsedCredentials?.private_key);
+      console.log('Private key tamanho:', typeof parsedCredentials?.private_key === 'string' ? parsedCredentials.private_key.length : 0);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error('[google-auth] invalid JSON in GOOGLE_SERVICE_ACCOUNT_JSON', {
-        message,
-        preview: credentials.slice(0, 200),
-      });
+      console.error('Erro ao fazer JSON.parse:', error);
       throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is not a valid JSON');
     }
   }

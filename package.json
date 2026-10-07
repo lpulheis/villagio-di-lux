@@ -7,7 +7,7 @@
     "dev": "vite",
     "serve:api": "API_PORT=4178 tsx server.ts",
     "dev:all": "concurrently \"npm run serve:api\" \"npm run dev\"",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && (git diff --quiet && git diff --cached --quiet) || (git add -A && git commit -m \"build: auto-commit\")",
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write ."
