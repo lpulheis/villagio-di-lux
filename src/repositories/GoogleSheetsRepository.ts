@@ -4,6 +4,40 @@ import { google } from 'googleapis';
 import type { RegistrationData } from '../types/registration.ts';
 import type { RegistrationRepository } from './RegistrationRepository.ts';
 
+export function normalizeServiceAccountCredentials(raw: string): Record<string, unknown> {
+  const trimmed = raw.trim();
+
+  if (!trimmed) {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is empty');
+  }
+
+  const candidates = [
+    trimmed,
+    trimmed.replace(/^(['"])(.*)\1$/s, '$2'),
+    trimmed.replace(/\\n/g, '\n'),
+    trimmed.replace(/\\r/g, '\r'),
+    trimmed.replace(/\\n/g, '\n').replace(/\\r/g, '\r'),
+  ];
+
+  let lastError: unknown;
+
+  for (const value of candidates) {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+
+      if (parsed && typeof parsed.private_key === 'string') {
+        parsed.private_key = parsed.private_key.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
+      }
+
+      return parsed;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('GOOGLE_SERVICE_ACCOUNT_JSON is not a valid JSON');
+}
+
 function getAuthClient() {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE;
@@ -21,7 +55,7 @@ function getAuthClient() {
 
   if (credentials) {
     try {
-      parsedCredentials = JSON.parse(credentials);
+      parsedCredentials = normalizeServiceAccountCredentials(credentials);
 
       console.log('Service Account project:', parsedCredentials?.project_id);
       console.log('Service Account email:', parsedCredentials?.client_email);

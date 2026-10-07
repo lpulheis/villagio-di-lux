@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { PortalData } from './types/portal';
-import { GoogleSheetsRepository } from './repositories/GoogleSheetsRepository';
+import { GoogleSheetsRepository, normalizeServiceAccountCredentials } from './repositories/GoogleSheetsRepository';
 import { getSheetNameForResource } from './utils/portalSheetMap';
-import { mergeResourceRows, resolveUsersFromSheetRows } from '../server';
+import { mergeResourceRows, resolveUsersFromSheetRows, validateUserLogin } from '../server';
 
 describe('Portal data model', () => {
   it('should support apps and simplified contacts', () => {
@@ -111,6 +111,42 @@ describe('Portal data model', () => {
     assert.equal(credentials.admin.password, 'villagio-admin');
     assert.equal(credentials.morador.role, 'morador');
     assert.equal(credentials.admin.name, 'Administrador');
+  });
+
+  it('should normalize escaped newlines in service account private keys', () => {
+    const raw = JSON.stringify({
+      type: 'service_account',
+      project_id: 'villagiodilux',
+      private_key: '-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n',
+      client_email: 'villagiodilux@villagiodilux.iam.gserviceaccount.com',
+    });
+
+    const credentials = normalizeServiceAccountCredentials(raw);
+
+    assert.equal(typeof credentials.private_key, 'string');
+    assert.equal((credentials.private_key as string).includes('\\n'), false);
+    assert.equal((credentials.private_key as string).includes('\n'), true);
+  });
+
+  it('should validate a user from the USERS sheet rows before falling back to defaults', async () => {
+    const rows: string[][] = [
+      ['username', 'password', 'role', 'name'],
+      ['maria', 'maria123', 'morador', 'Maria Souza'],
+      ['admin', 'villagio-admin', 'admin', 'Administrador'],
+    ];
+
+    const originalReadSheet = GoogleSheetsRepository.prototype.readSheet;
+    GoogleSheetsRepository.prototype.readSheet = async () => rows;
+
+    try {
+      const sheetUsers = resolveUsersFromSheetRows(rows);
+      assert.equal(sheetUsers.maria.password, 'maria123');
+
+      const user = await validateUserLogin('maria', 'maria123');
+      assert.deepEqual(user, { username: 'maria', role: 'morador', name: 'Maria Souza' });
+    } finally {
+      GoogleSheetsRepository.prototype.readSheet = originalReadSheet;
+    }
   });
 
   it('should ensure the target sheet exists before appending rows', async () => {

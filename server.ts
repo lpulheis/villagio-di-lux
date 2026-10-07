@@ -430,22 +430,56 @@ export const resolveUsersFromSheetRows = (rows: string[][]): Record<string, { pa
   return result;
 };
 
-const resolvePassword = async (username: string): Promise<string> => {
+const getDisplayNameForRole = (role: string): string => {
+  switch (role) {
+    case 'admin':
+      return 'Administrador';
+    case 'sindico':
+      return 'Síndico';
+    case 'zelador':
+      return 'Zelador';
+    default:
+      return 'Morador';
+  }
+};
+
+const findUserInSheet = async (username: string): Promise<{ password: string; role: string; name: string } | null> => {
   const normalized = username.trim().toLowerCase();
 
-  if (useSheets) {
-    try {
-      const repository = new GoogleSheetsRepository();
-      const rows = await repository.readSheet(getSheetNameForResource('users'));
-      const sheetUsers = resolveUsersFromSheetRows(rows);
-      const found = sheetUsers[normalized];
+  if (!normalized) {
+    return null;
+  }
 
-      if (found?.password) {
-        return found.password;
-      }
-    } catch {
-      // falls back to env/default values below
+  if (!useSheets) {
+    return null;
+  }
+
+  try {
+    const repository = new GoogleSheetsRepository();
+    const rows = await repository.readSheet(getSheetNameForResource('users'));
+    const sheetUsers = resolveUsersFromSheetRows(rows);
+    const found = sheetUsers[normalized];
+
+    if (found) {
+      return {
+        ...found,
+        role: found.role.trim().toLowerCase() || normalized,
+        name: found.name || getDisplayNameForRole(found.role.trim().toLowerCase() || normalized),
+      };
     }
+  } catch (error) {
+    console.error('[auth] sheet user lookup failed', error);
+  }
+
+  return null;
+};
+
+const resolvePassword = async (username: string): Promise<string> => {
+  const normalized = username.trim().toLowerCase();
+  const sheetUser = await findUserInSheet(normalized);
+
+  if (sheetUser?.password) {
+    return sheetUser.password;
   }
 
   const envKeyMap: Record<string, string> = {
@@ -466,6 +500,37 @@ const resolvePassword = async (username: string): Promise<string> => {
   return process.env[key] ?? defaults[normalized] ?? defaults.morador;
 };
 
+export const validateUserLogin = async (username: string, password: string): Promise<{ username: string; role: string; name: string } | null> => {
+  const normalized = username.trim().toLowerCase();
+
+  if (!normalized || !password) {
+    return null;
+  }
+
+  const sheetUser = await findUserInSheet(normalized);
+  if (sheetUser && password === sheetUser.password) {
+    return {
+      username: normalized,
+      role: sheetUser.role,
+      name: sheetUser.name || getDisplayNameForRole(sheetUser.role),
+    };
+  }
+
+  const validUsernames = ['morador', 'zelador', 'sindico', 'admin'] as const;
+
+  for (const role of validUsernames) {
+    if (normalized === role && password === await resolvePassword(role)) {
+      return {
+        username: normalized,
+        role,
+        name: getDisplayNameForRole(role),
+      };
+    }
+  }
+
+  return null;
+};
+
 app.post('/api/auth/login', async (req: Request, res: Response) => {
   const username = String(req.body?.username ?? '').trim().toLowerCase();
   const password = String(req.body?.password ?? '');
@@ -474,36 +539,13 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Usuário e senha são obrigatórios.' });
   }
 
-  const validUsernames = ['morador', 'zelador', 'sindico', 'admin'] as const;
-  let matchedRole: string | null = null;
+  const user = await validateUserLogin(username, password);
 
-  for (const role of validUsernames) {
-    if (username === role && password === await resolvePassword(role)) {
-      matchedRole = role;
-      break;
-    }
-  }
-
-  if (!matchedRole) {
+  if (!user) {
     return res.status(401).json({ message: 'Credenciais inválidas.' });
   }
 
-  const role = matchedRole;
-
-  return res.json({
-    user: {
-      username,
-      role,
-      name:
-        role === 'admin'
-          ? 'Administrador'
-          : role === 'sindico'
-            ? 'Síndico'
-            : role === 'zelador'
-              ? 'Zelador'
-              : 'Morador',
-    },
-  });
+  return res.json({ user });
 });
 
 app.get('/api/portal', async (_req: Request, res: Response) => {
