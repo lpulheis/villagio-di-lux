@@ -52,6 +52,32 @@ npm run build
 2. Conectar o repositório ao Vercel.
 3. O Vercel detecta automaticamente o projeto Vite.
 4. Definir `npm run build` como comando de build e `dist` como diretório de saída.
+5. Configurar as variáveis de ambiente do projeto no painel do Vercel.
+
+### Variáveis de ambiente do Vercel
+
+Para produção, mantenha o Google Sheets como base de dados e nunca deixe credenciais no código-fonte.
+
+```bash
+USE_GOOGLE_SHEETS=true
+GOOGLE_SHEETS_ID=SEU_ID_DA_PLANILHA
+GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+```
+
+A variável `GOOGLE_SERVICE_ACCOUNT_JSON` deve receber o conteúdo completo do arquivo JSON do service account do Google.
+
+Para desenvolvimento local, também é aceito:
+
+```bash
+GOOGLE_SERVICE_ACCOUNT_KEYFILE=./credentials/service-account.json
+```
+
+### Segurança
+
+- Nunca commitar o arquivo `credentials/service-account.json` em repositório público.
+- Não usar senha fixa no frontend.
+- Mantém o login no backend e os usuários na aba `USUARIOS` do Sheets.
+- O frontend só envia username/password; o servidor valida no backend.
 
 ## Estrutura do projeto
 

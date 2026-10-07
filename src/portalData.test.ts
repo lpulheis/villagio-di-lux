@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { PortalData } from './types/portal';
+import { GoogleSheetsRepository } from './repositories/GoogleSheetsRepository';
 import { getSheetNameForResource } from './utils/portalSheetMap';
 import { mergeResourceRows, resolveUsersFromSheetRows } from '../server';
 
@@ -110,5 +111,26 @@ describe('Portal data model', () => {
     assert.equal(credentials.admin.password, 'villagio-admin');
     assert.equal(credentials.morador.role, 'morador');
     assert.equal(credentials.admin.name, 'Administrador');
+  });
+
+  it('should ensure the target sheet exists before appending rows', async () => {
+    const repo = new GoogleSheetsRepository() as any;
+    let ensured = false;
+
+    repo.sheetId = 'sheet-id-test';
+    repo.ensureSheetExists = async () => {
+      ensured = true;
+    };
+    repo.sheets = {
+      spreadsheets: {
+        values: {
+          append: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    await repo.appendRows('CADASTROS', [['2026-10-01', 'A', 'B', 'C']]);
+
+    assert.equal(ensured, true);
   });
 });

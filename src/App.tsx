@@ -677,6 +677,7 @@ function ResidentNav({ currentRoute, onNavigate, compact = false }: { currentRou
     { label: 'Horários', path: '/horarios' },
     { label: 'Cronograma', path: '/cronograma' },
     { label: 'Contatos', path: '/contatos' },
+    { label: 'Avisos', path: '/avisos' },
     { label: 'Apps', path: '/apps' },
   ];
 
@@ -703,6 +704,7 @@ function AdminNav({ currentRoute, onNavigate, compact = false }: { currentRoute:
     { label: 'Contatos', path: '/admin/contatos' },
     { label: 'Horários', path: '/admin/horarios' },
     { label: 'Cronograma', path: '/admin/cronograma' },
+    { label: 'Avisos', path: '/admin/avisos' },
     { label: 'Apps', path: '/admin/apps' },
     { label: 'Configurações', path: '/admin/configuracoes' },
   ];
@@ -875,6 +877,30 @@ function ResidentPages({ route, data, onNavigate }: { route: string; data: Porta
         </div>
       );
 
+    case '/avisos':
+      return (
+        <div className="space-y-6">
+          <SectionHeader title="AVISOS" subtitle="Comunicados e alertas do condomínio" />
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {data.notices.length ? data.notices.map((notice) => (
+              <div key={notice.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700">{notice.priority}</span>
+                  <span className="text-xs text-slate-500">{notice.date}</span>
+                </div>
+                <h3 className="mt-4 text-lg font-semibold text-slate-900">{notice.title}</h3>
+                <p className="mt-2 text-sm text-slate-600">{notice.description}</p>
+                {notice.link && (
+                  <a href={notice.link} target="_blank" rel="noreferrer" className="mt-4 inline-flex rounded-full bg-emerald-600 px-3 py-2 text-xs font-medium text-white">
+                    Ver detalhes
+                  </a>
+                )}
+              </div>
+            )) : <EmptyState label="Nenhum aviso cadastrado." />}
+          </div>
+        </div>
+      );
+
     case '/apps':
       return (
         <div className="space-y-6">
@@ -964,6 +990,8 @@ function AdminPages({ route, data, onNavigate, onRefresh, lastSyncedAt, onDataCh
       return <AdminCrudPage resource="schedules" title="Horários" data={resourceData.schedules as ScheduleItem[]} onSave={async (items) => updateResource('schedules', items)} />;
     case '/admin/cronograma':
       return <AdminCrudPage resource="events" title="Cronograma" data={resourceData.events as EventItem[]} onSave={async (items) => updateResource('events', items)} />;
+    case '/admin/avisos':
+      return <AdminCrudPage resource="notices" title="Avisos" data={resourceData.notices as NoticeItem[]} onSave={async (items) => updateResource('notices', items)} />;
     case '/admin/apps':
       return <AdminCrudPage resource="apps" title="Apps" data={resourceData.apps as AppItem[]} onSave={async (items) => updateResource('apps', items)} />;
     case '/admin/documentos':

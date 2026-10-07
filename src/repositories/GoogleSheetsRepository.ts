@@ -133,6 +133,8 @@ export class GoogleSheetsRepository implements RegistrationRepository {
       return;
     }
 
+    await this.ensureSheetExists(sheetName);
+
     await this.sheets.spreadsheets.values.append({
       spreadsheetId: this.sheetId,
       range: `${sheetName}!A:Z`,

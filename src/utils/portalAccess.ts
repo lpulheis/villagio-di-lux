@@ -6,6 +6,7 @@ export const residentRoutes = [
   '/horarios',
   '/cronograma',
   '/contatos',
+  '/avisos',
   '/apps',
 ];
 
@@ -15,6 +16,7 @@ export const adminRoutes = [
   '/admin/contatos',
   '/admin/horarios',
   '/admin/cronograma',
+  '/admin/avisos',
   '/admin/apps',
   '/admin/configuracoes',
 ];
@@ -46,7 +48,7 @@ export const canAccessRoute = (role: PortalRole | null | undefined, route: strin
       return false;
     }
 
-    const allowedManagementRoutes = ['/admin', '/admin/dashboard', '/admin/contatos', '/admin/horarios', '/admin/cronograma', '/admin/apps'];
+    const allowedManagementRoutes = ['/admin', '/admin/dashboard', '/admin/contatos', '/admin/horarios', '/admin/cronograma', '/admin/avisos', '/admin/apps'];
     if (normalized.startsWith('/admin')) {
       return allowedManagementRoutes.includes(normalized);
     }

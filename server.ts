@@ -692,7 +692,9 @@ app.post('/api/registrations', async (req: Request, res: Response) => {
   }
 });
 
-if (process.env.NODE_ENV !== 'test' && import.meta.url === pathToFileURL(process.argv[1]).href) {
+const isDirectServerEntry = typeof process.argv[1] === 'string' && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (process.env.NODE_ENV !== 'test' && isDirectServerEntry) {
   app.listen(port, '0.0.0.0', () => {
     console.log(`API de cadastro e portal rodando em http://localhost:${port}`);
   });
