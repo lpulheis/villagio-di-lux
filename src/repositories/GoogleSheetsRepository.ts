@@ -8,7 +8,15 @@ function getAuthClient() {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE;
 
+  console.log('[google-auth] starting auth config', {
+    hasJson: Boolean(credentials),
+    hasKeyFile: Boolean(keyFile),
+    keyFile: keyFile ?? null,
+    googleSheetsId: process.env.GOOGLE_SHEETS_ID ?? null,
+  });
+
   if (!credentials && !keyFile) {
+    console.error('[google-auth] missing credentials env values');
     throw new Error('Provide GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_KEYFILE in env');
   }
 
@@ -17,24 +25,46 @@ function getAuthClient() {
   if (credentials) {
     try {
       parsedCredentials = JSON.parse(credentials);
-    } catch {
+      console.log('[google-auth] JSON parsed successfully', {
+        keys: Object.keys(parsedCredentials ?? {}),
+        hasPrivateKey: Boolean(parsedCredentials?.private_key),
+        projectId: parsedCredentials?.project_id ?? null,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[google-auth] invalid JSON in GOOGLE_SERVICE_ACCOUNT_JSON', {
+        message,
+        preview: credentials.slice(0, 200),
+      });
       throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is not a valid JSON');
     }
   }
 
   if (!parsedCredentials && keyFile) {
     const resolvedKeyFile = path.resolve(process.cwd(), keyFile);
+    console.log('[google-auth] checking key file', { resolvedKeyFile });
 
     if (!existsSync(resolvedKeyFile)) {
+      console.error('[google-auth] key file missing', { resolvedKeyFile });
       throw new Error(`GOOGLE_SERVICE_ACCOUNT_KEYFILE points to a missing file: ${resolvedKeyFile}`);
     }
   }
 
-  return new google.auth.GoogleAuth({
-    credentials: parsedCredentials,
-    keyFilename: !parsedCredentials ? keyFile : undefined,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
+  try {
+    const authClient = new google.auth.GoogleAuth({
+      credentials: parsedCredentials,
+      keyFilename: !parsedCredentials ? keyFile : undefined,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+
+    console.log('[google-auth] GoogleAuth created successfully');
+    return authClient;
+  } catch (error) {
+    console.error('[google-auth] GoogleAuth creation failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 export class GoogleSheetsRepository implements RegistrationRepository {

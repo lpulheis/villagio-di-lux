@@ -18,6 +18,15 @@ app.use(cors());
 app.use(express.json());
 
 const useSheets = process.env.USE_GOOGLE_SHEETS === 'true';
+console.log('[server] startup env', {
+  useSheets,
+  hasGoogleServiceAccountJson: Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
+  hasGoogleServiceAccountKeyFile: Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE),
+  googleSheetsId: process.env.GOOGLE_SHEETS_ID ?? null,
+  apiPort: port,
+  cwd: process.cwd(),
+});
+
 const registrationRepository = useSheets ? new GoogleSheetsRepository() : new CSVRepository();
 const registrationService = new RegistrationService(registrationRepository);
 const PORTAL_FALLBACK_CSV = path.resolve(process.cwd(), 'portal-fallback.csv');
