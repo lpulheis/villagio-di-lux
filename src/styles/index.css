@@ -25,3 +25,11 @@ select {
 button:hover {
   @apply transition-all duration-200 ease-in-out;
 }
+
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

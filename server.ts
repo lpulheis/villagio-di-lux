@@ -9,6 +9,7 @@ import {
   parseResidentUnit,
   residentEmail,
   residentUnitFromEmail,
+  residentUnitFromUser,
   residentUsername,
   RESIDENT_ACCOUNT_PASSWORD,
 } from './src/utils/residentAccounts.js';
@@ -382,6 +383,60 @@ app.post('/api/admin/units', async (req: Request, res: Response) => {
   } catch (error) {
     console.error(`Failed to create resident account casa${unit}:`, error);
     return res.status(500).json({ message: 'Não foi possível criar a conta da unidade.' });
+  }
+});
+
+app.post('/api/admin/units/reset-password', async (req: Request, res: Response) => {
+  const manager = await authenticateAccountManager(req, res);
+  if (!manager) return;
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ message: 'Configure SUPABASE_SERVICE_ROLE_KEY no servidor.' });
+  }
+
+  const residentUserId = typeof req.body?.residentId === 'string' ? req.body.residentId : '';
+  if (!residentUserId) {
+    return res.status(400).json({ message: 'Informe a conta de morador que deseja redefinir.' });
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(residentUserId);
+    const user = data.user;
+    if (error || !user) {
+      return res.status(404).json({ message: 'A conta de morador não foi encontrada.' });
+    }
+
+    const unit = residentUnitFromUser(user);
+    if (
+      unit === null
+      || (user.app_metadata?.role !== 'morador' && user.user_metadata?.role !== 'morador')
+    ) {
+      return res.status(404).json({ message: 'A conta selecionada não pertence a um morador.' });
+    }
+
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+      password: RESIDENT_ACCOUNT_PASSWORD,
+      app_metadata: { ...user.app_metadata, role: 'morador', must_change_password: true },
+    });
+    if (updateError) {
+      console.error(`Failed to reset resident password for unit ${unit}:`, updateError.message);
+      return res.status(500).json({ message: 'Não foi possível redefinir a senha desta unidade.' });
+    }
+
+    const { error: signOutError } = await supabaseAdmin.auth.admin.signOut(user.id, 'global');
+    if (signOutError) {
+      console.error(`Password reset but session revocation failed for resident account ${user.id}:`, signOutError.message);
+      return res.status(500).json({ message: 'Senha redefinida, mas as sessões existentes não foram encerradas. Contate o suporte.' });
+    }
+
+    return res.json({
+      unit,
+      username: user.email ?? residentUsername(unit),
+      temporaryPassword: RESIDENT_ACCOUNT_PASSWORD,
+    });
+  } catch (error) {
+    console.error(`Failed to reset resident account ${residentUserId}:`, error);
+    return res.status(500).json({ message: 'Não foi possível redefinir a senha desta unidade.' });
   }
 });
 

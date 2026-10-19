@@ -73,16 +73,20 @@ test('navigation exposes suggestion entries for both resident and admin flows', 
 
 test('short login identifiers resolve to the full Supabase email', () => {
   assert.deepEqual(buildSupabaseEmailCandidates('morador'), [
-    'morador',
     'morador@villagiodilux.com.br',
+    'morador',
     'morador@villagio.com',
     'morador@villagio.local',
   ]);
 
   assert.deepEqual(buildSupabaseEmailCandidates('Admin'), [
-    'admin',
     'admin@villagiodilux.com.br',
+    'admin',
     'admin@villagio.com',
     'admin@villagio.local',
+  ]);
+
+  assert.deepEqual(buildSupabaseEmailCandidates('resident@example.com'), [
+    'resident@example.com',
   ]);
 });

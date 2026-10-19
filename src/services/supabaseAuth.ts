@@ -47,8 +47,8 @@ export const buildSupabaseEmailCandidates = (identifier: string): string[] => {
 
   const normalized = trimmed.toLowerCase();
   return Array.from(new Set([
-    normalized,
     `${normalized}@villagiodilux.com.br`,
+    normalized,
     `${normalized}@villagio.com`,
     `${normalized}@villagio.local`,
   ]));

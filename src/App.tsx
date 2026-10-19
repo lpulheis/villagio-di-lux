@@ -512,6 +512,9 @@ function App() {
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const sessionUsername = session?.username;
+  const sessionRole = session?.role;
+  const mustChangePassword = session?.mustChangePassword;
 
   const syncPortalData = useCallback((data: PortalData) => {
     setPortalData(data);
@@ -574,14 +577,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!session) {
+    if (!sessionUsername || !sessionRole) {
       if (routeState.path !== '/login') {
         window.location.hash = '#/login';
       }
       return;
     }
 
-    if (session.mustChangePassword) {
+    if (mustChangePassword) {
       if (routeState.path !== '/alterar-senha') {
         window.location.hash = '#/alterar-senha';
         setRouteState((current) => ({ ...current, path: '/alterar-senha' }));
@@ -589,8 +592,8 @@ function App() {
       return;
     }
 
-    if (!canAccessRoute(session.role, routeState.path)) {
-      const redirect = managementRoles.includes(session.role) ? '/admin' : '/inicio';
+    if (!canAccessRoute(sessionRole, routeState.path)) {
+      const redirect = managementRoles.includes(sessionRole) ? '/admin' : '/inicio';
       window.location.hash = `#${redirect}`;
       setRouteState((current) => ({ ...current, path: redirect }));
       return;
@@ -609,7 +612,7 @@ function App() {
     };
 
     loadData();
-  }, [session, routeState.path]);
+  }, [sessionUsername, sessionRole, mustChangePassword, routeState.path, refreshPortalData]);
 
   const navigate = (path: string) => {
     const nextPath = normalizeRoute(path);

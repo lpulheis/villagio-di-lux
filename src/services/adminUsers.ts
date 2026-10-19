@@ -81,6 +81,7 @@ export const createResidentUnitAccount = async (unit: number, fullName: string):
   });
 
 export const resetResidentUnitPassword = async (residentId: string): Promise<{ unit: number; username: string; temporaryPassword: string }> =>
-  requestAdminApi(`/api/admin/residents/${encodeURIComponent(residentId)}/reset-password`, {
+  requestAdminApi('/api/admin/units/reset-password', {
     method: 'POST',
+    body: JSON.stringify({ residentId }),
   });
