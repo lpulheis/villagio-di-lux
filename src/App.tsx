@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { Bell, CalendarDays, CheckCircle2, FileText, Home, KeyRound, LogOut, Menu, PhoneCall, RefreshCcw, Settings, ShieldCheck, Smartphone, UserRound, Users, Wrench, X } from 'lucide-react';
+import { Bell, CalendarDays, CheckCircle2, Eye, EyeOff, FileText, Home, KeyRound, LogOut, Menu, PhoneCall, RefreshCcw, Settings, ShieldCheck, Smartphone, UserRound, Users, Wrench, X } from 'lucide-react';
 import { Button } from './components/ui/Button';
 import { Input } from './components/ui/Input';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
@@ -698,8 +698,9 @@ function App() {
 }
 
 function LoginPage({ onSubmit }: { onSubmit: (credentials: { username: string; password: string }) => Promise<void> }) {
-  const [username, setUsername] = useState('morador');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -733,11 +734,28 @@ function LoginPage({ onSubmit }: { onSubmit: (credentials: { username: string; p
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-2">
-            <Input label="Usuário" placeholder="morador, admin, sindico ou zelador" value={username} onChange={(event) => setUsername(event.target.value)} />
-            <p className="text-xs text-slate-500">Você pode usar o perfil ou o e-mail completo.</p>
-          </div>
-          <Input label="Senha" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <Input label="Usuário" autoComplete="username" placeholder="Digite seu usuário ou e-mail" value={username} onChange={(event) => setUsername(event.target.value)} />
+          <label className="grid gap-2 text-sm text-slate-700">
+            <span className="font-medium">Senha</span>
+            <span className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm text-slate-900 transition duration-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                aria-pressed={showPassword}
+                className="absolute inset-y-0 right-3 flex items-center text-slate-500 transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              >
+                {showPassword ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
+              </button>
+            </span>
+          </label>
           {error && <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
           <Button type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? 'Entrando...' : 'ENTRAR'}
