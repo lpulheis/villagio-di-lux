@@ -37,6 +37,7 @@ describe('Portal data model', () => {
       notices: [],
       documents: [],
       apps: [],
+      suggestions: [],
     };
 
     assert.equal(data.config.condominiumName, 'VILLAGIO DI LUX');

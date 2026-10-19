@@ -6,6 +6,7 @@ export const residentRoutes = [
   '/horarios',
   '/cronograma',
   '/contatos',
+  '/sugestoes',
   '/apps',
 ];
 
@@ -16,16 +17,17 @@ export const adminRoutes = [
   '/admin/cronograma',
   '/admin/apps',
   '/admin/configuracoes',
+  '/admin/sugestoes',
 ];
 
 const managementRoles: PortalRole[] = ['admin', 'sindico', 'zelador'];
 
 export const getNavigationItems = (role: PortalRole | null | undefined): string[] => {
   if (role === 'admin' || role === 'sindico' || role === 'zelador') {
-    return ['/admin', '/admin/horarios', '/admin/cronograma', '/admin/contatos', '/admin/apps'];
+    return ['/admin', '/admin/horarios', '/admin/cronograma', '/admin/contatos', '/admin/sugestoes', '/admin/apps'];
   }
 
-  return ['/inicio', '/horarios', '/cronograma', '/contatos', '/apps'];
+  return ['/inicio', '/horarios', '/cronograma', '/contatos', '/sugestoes', '/apps'];
 };
 
 export const normalizeRoute = (value: string): string => {
@@ -52,12 +54,16 @@ export const canAccessRoute = (role: PortalRole | null | undefined, route: strin
     return residentRoutes.includes(normalized);
   }
 
+  if (role === undefined || role === null) {
+    return false;
+  }
+
   if (managementRoles.includes(role as PortalRole)) {
     if (normalized === '/admin/configuracoes') {
       return false;
     }
 
-    const allowedManagementRoutes = ['/admin', '/admin/contatos', '/admin/horarios', '/admin/cronograma', '/admin/apps'];
+    const allowedManagementRoutes = ['/admin', '/admin/contatos', '/admin/horarios', '/admin/cronograma', '/admin/apps', '/admin/sugestoes'];
     if (normalized.startsWith('/admin')) {
       return allowedManagementRoutes.includes(normalized);
     }

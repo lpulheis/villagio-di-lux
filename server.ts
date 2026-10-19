@@ -56,6 +56,7 @@ const portalState: Record<string, unknown> = {
       iosLink: 'https://apps.apple.com',
     },
   ],
+  suggestions: [],
 };
 
 class InMemoryRegistrationRepository implements RegistrationRepository {

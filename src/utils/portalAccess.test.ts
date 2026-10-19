@@ -47,6 +47,19 @@ test('admin routes deny avisos and keep the expected sections', () => {
   assert.equal(canAccessRoute('morador', '/avisos'), false);
 });
 
+test('suggestion routes are allowed for residents and management', () => {
+  assert.equal(canAccessRoute('morador', '/sugestoes'), true);
+  assert.equal(canAccessRoute('admin', '/admin/sugestoes'), true);
+  assert.equal(canAccessRoute('sindico', '/admin/sugestoes'), true);
+  assert.equal(canAccessRoute('zelador', '/admin/sugestoes'), true);
+  assert.equal(canAccessRoute('morador', '/admin/sugestoes'), false);
+});
+
+test('navigation exposes suggestion entries for both resident and admin flows', () => {
+  assert.ok(getNavigationItems('morador').includes('/sugestoes'));
+  assert.ok(getNavigationItems('admin').includes('/admin/sugestoes'));
+});
+
 test('short login identifiers resolve to the full Supabase email', () => {
   assert.deepEqual(buildSupabaseEmailCandidates('morador'), [
     'morador',

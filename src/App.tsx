@@ -5,7 +5,7 @@ import { Input } from './components/ui/Input';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { signInWithSupabase } from './services/supabaseAuth';
 import { canAccessRoute, getNavigationItems, normalizeRoute, type PortalRole } from './utils/portalAccess';
-import type { AppItem, ContactItem, DocumentItem, EventItem, NoticeItem, PortalConfig, PortalData, ProfessionalItem, ScheduleItem } from './types/portal';
+import type { AppItem, ContactItem, DocumentItem, EventItem, NoticeItem, PortalConfig, PortalData, ProfessionalItem, ScheduleItem, SuggestionItem, SuggestionStatus } from './types/portal';
 
 type Session = {
   username: string;
@@ -18,7 +18,7 @@ type RouteState = {
   openMenu: boolean;
 };
 
-type PortalResourceItem = ContactItem | ScheduleItem | EventItem | ProfessionalItem | NoticeItem | DocumentItem | AppItem;
+type PortalResourceItem = ContactItem | ScheduleItem | EventItem | ProfessionalItem | NoticeItem | DocumentItem | AppItem | SuggestionItem;
 
 const managementRoles: PortalRole[] = ['admin', 'sindico', 'zelador'];
 
@@ -239,6 +239,7 @@ const basePortalData: PortalData = {
       icon: '/apps/condfy.png',
     },
   ],
+  suggestions: [],
 };
 
 const formatLocalDateKey = (value: Date) => {
@@ -377,6 +378,18 @@ const normalizeApp = (app: Partial<AppItem> & Record<string, unknown>): AppItem 
   icon: typeof app.icon === 'string' && app.icon ? app.icon : getDefaultAppIcon(String(app.id ?? app.name ?? '')),
 });
 
+const normalizeSuggestion = (suggestion: Partial<SuggestionItem> & Record<string, unknown>): SuggestionItem => ({
+  id: String(suggestion.id ?? crypto.randomUUID()),
+  title: String(suggestion.title ?? 'Sugestão'),
+  description: String(suggestion.description ?? ''),
+  category: String(suggestion.category ?? 'Outros'),
+  authorName: String(suggestion.authorName ?? 'Morador'),
+  authorEmail: String(suggestion.authorEmail ?? ''),
+  unit: String(suggestion.unit ?? 'Unidade não informada'),
+  createdAt: String(suggestion.createdAt ?? new Date().toISOString()),
+  status: (String(suggestion.status ?? 'nova') as SuggestionStatus),
+});
+
 const normalizePortalData = (payload: Partial<PortalData> | null | undefined): PortalData => {
   const supplies = getSafeJson(payload, {} as Partial<PortalData>);
   return {
@@ -388,8 +401,13 @@ const normalizePortalData = (payload: Partial<PortalData> | null | undefined): P
     notices: getSafeJson(supplies.notices, basePortalData.notices),
     documents: getSafeJson(supplies.documents, basePortalData.documents),
     apps: Array.isArray(supplies.apps) ? supplies.apps.map((app) => normalizeApp(app as Partial<AppItem> & Record<string, unknown>)) : basePortalData.apps,
+    suggestions: Array.isArray(supplies.suggestions)
+      ? supplies.suggestions.map((suggestion) => normalizeSuggestion(suggestion as Partial<SuggestionItem> & Record<string, unknown>))
+      : [],
   };
 };
+
+const getSuggestionNotificationCount = (suggestions: SuggestionItem[] = []) => suggestions.filter((item) => item.status === 'nova' || item.status === 'em_analise').length;
 
 const persistPortalData = async (next: PortalData): Promise<void> => {
   if (!hasSupabaseConfig || !supabase) {
@@ -438,6 +456,30 @@ const fetchPortalData = async (): Promise<PortalData> => {
 const renderStatusBadge = (status: string) => (
   <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
     {status}
+  </span>
+);
+
+const suggestionStatusLabels: Record<SuggestionStatus, string> = {
+  nova: 'Nova',
+  em_analise: 'Em análise',
+  aprovada: 'Aprovada',
+  em_execucao: 'Em execução',
+  concluida: 'Concluída',
+  rejeitada: 'Rejeitada',
+};
+
+const suggestionStatusClasses: Record<SuggestionStatus, string> = {
+  nova: 'border-amber-200 bg-amber-50 text-amber-700',
+  em_analise: 'border-blue-200 bg-blue-50 text-blue-700',
+  aprovada: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  em_execucao: 'border-violet-200 bg-violet-50 text-violet-700',
+  concluida: 'border-slate-200 bg-slate-100 text-slate-700',
+  rejeitada: 'border-rose-200 bg-rose-50 text-rose-700',
+};
+
+const SuggestionStatusBadge = ({ status }: { status: SuggestionStatus }) => (
+  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${suggestionStatusClasses[status]}`}>
+    {suggestionStatusLabels[status]}
   </span>
 );
 
@@ -616,6 +658,7 @@ function App() {
         onLogout={logout}
         openMenu={false}
         onToggleMenu={() => undefined}
+        suggestionCount={getSuggestionNotificationCount(portalData.suggestions)}
       />
 
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 pb-28 pt-5 md:px-6 lg:px-8">
@@ -626,7 +669,7 @@ function App() {
         )}
 
         {session.role === 'morador' ? (
-          <ResidentPages route={routeState.path} data={portalData} onNavigate={navigate} />
+          <ResidentPages route={routeState.path} data={portalData} onNavigate={navigate} session={session} onDataChange={syncPortalData} onRefresh={refreshPortalData} />
         ) : (
           <AdminPages route={routeState.path} data={portalData} onNavigate={navigate} onRefresh={refreshPortalData} lastSyncedAt={lastSyncedAt} onDataChange={syncPortalData} />
         )}
@@ -635,7 +678,7 @@ function App() {
       {session.role === 'morador' ? (
         <BottomNavigation currentRoute={routeState.path} onNavigate={navigate} />
       ) : (
-        <AdminBottomNavigation currentRoute={routeState.path} onNavigate={navigate} />
+        <AdminBottomNavigation currentRoute={routeState.path} onNavigate={navigate} notificationCount={getSuggestionNotificationCount(portalData.suggestions)} />
       )}
     </div>
   );
@@ -699,6 +742,7 @@ function AppHeader({
   onLogout,
   openMenu,
   onToggleMenu,
+  suggestionCount = 0,
 }: {
   session: Session;
   currentRoute: string;
@@ -706,9 +750,11 @@ function AppHeader({
   onLogout: () => void;
   openMenu: boolean;
   onToggleMenu: () => void;
+  suggestionCount?: number;
 }) {
   const isManagementRole = managementRoles.includes(session.role);
   const pageTitle = isManagementRole ? 'Painel Administrativo' : 'Condomínio';
+  const suggestionNotifications = isManagementRole ? suggestionCount : 0;
 
   return (
     <header className="border-b border-slate-200 bg-white/85 backdrop-blur-sm">
@@ -729,7 +775,7 @@ function AppHeader({
 
         <div className="hidden items-center gap-6 md:flex">
           {isManagementRole ? (
-            <AdminNav currentRoute={currentRoute} onNavigate={onNavigate} compact />
+            <AdminNav currentRoute={currentRoute} onNavigate={onNavigate} compact notificationCount={suggestionNotifications} />
           ) : (
             <ResidentNav currentRoute={currentRoute} onNavigate={onNavigate} compact />
           )}
@@ -755,6 +801,7 @@ function ResidentNav({ currentRoute, onNavigate, compact = false }: { currentRou
     { label: 'Horários', path: '/horarios' },
     { label: 'Cronograma', path: '/cronograma' },
     { label: 'Contatos', path: '/contatos' },
+    { label: 'Sugestões', path: '/sugestoes' },
     { label: 'Apps', path: '/apps' },
   ];
 
@@ -775,27 +822,34 @@ function ResidentNav({ currentRoute, onNavigate, compact = false }: { currentRou
   );
 }
 
-function AdminNav({ currentRoute, onNavigate, compact = false }: { currentRoute: string; onNavigate: (path: string) => void; compact?: boolean }) {
+function AdminNav({ currentRoute, onNavigate, compact = false, notificationCount = 0 }: { currentRoute: string; onNavigate: (path: string) => void; compact?: boolean; notificationCount?: number }) {
   const items = [
     { label: 'Início', path: '/admin' },
     { label: 'Horários', path: '/admin/horarios' },
     { label: 'Cronograma', path: '/admin/cronograma' },
     { label: 'Contatos', path: '/admin/contatos' },
+    { label: 'Sugestões', path: '/admin/sugestoes' },
     { label: 'Apps', path: '/admin/apps' },
   ];
 
   return (
     <nav className={compact ? 'flex flex-wrap items-center gap-2' : 'grid gap-2 p-3'}>
       {items.map((item) => (
-        <button
-          key={item.path}
-          onClick={() => onNavigate(item.path)}
-          className={`rounded-full px-3 py-2 text-sm font-medium transition ${
-            currentRoute === item.path ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
-          }`}
-        >
-          {item.label}
-        </button>
+        <div key={item.path} className="relative">
+          <button
+            onClick={() => onNavigate(item.path)}
+            className={`rounded-full px-3 py-2 text-sm font-medium transition ${
+              currentRoute === item.path ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            {item.label}
+          </button>
+          {item.path === '/admin/sugestoes' && notificationCount > 0 && (
+            <span className="absolute -right-2 -top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+              {notificationCount}
+            </span>
+          )}
+        </div>
       ))}
     </nav>
   );
@@ -807,12 +861,13 @@ function BottomNavigation({ currentRoute, onNavigate }: { currentRoute: string; 
     { label: 'Horários', icon: CalendarDays, path: '/horarios' },
     { label: 'Cronograma', icon: Bell, path: '/cronograma' },
     { label: 'Contatos', icon: PhoneCall, path: '/contatos' },
+    { label: 'Sugestões', icon: Wrench, path: '/sugestoes' },
     { label: 'Apps', icon: Smartphone, path: '/apps' },
   ];
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-2 shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur md:hidden">
-      <div className="mx-auto grid max-w-lg grid-cols-5 gap-2">
+      <div className="mx-auto grid max-w-lg grid-cols-6 gap-2">
         {items.map(({ label, icon: Icon, path }) => (
           <button key={path} onClick={() => onNavigate(path)} className={`flex flex-col items-center justify-center rounded-2xl gap-1 px-2 py-2 text-[10px] font-medium ${currentRoute === path ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600'}`}>
             <Icon className="h-4 w-4" />
@@ -824,21 +879,27 @@ function BottomNavigation({ currentRoute, onNavigate }: { currentRoute: string; 
   );
 }
 
-function AdminBottomNavigation({ currentRoute, onNavigate }: { currentRoute: string; onNavigate: (path: string) => void }) {
+function AdminBottomNavigation({ currentRoute, onNavigate, notificationCount = 0 }: { currentRoute: string; onNavigate: (path: string) => void; notificationCount?: number }) {
   const items = [
     { label: 'Início', icon: Home, path: '/admin' },
     { label: 'Horários', icon: CalendarDays, path: '/admin/horarios' },
     { label: 'Cronograma', icon: Bell, path: '/admin/cronograma' },
     { label: 'Contatos', icon: PhoneCall, path: '/admin/contatos' },
+    { label: 'Sugestões', icon: Wrench, path: '/admin/sugestoes' },
     { label: 'Apps', icon: Smartphone, path: '/admin/apps' },
   ];
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-2 shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur md:hidden">
-      <div className="mx-auto grid max-w-lg grid-cols-5 gap-2">
+      <div className="mx-auto grid max-w-lg grid-cols-6 gap-2">
         {items.map(({ label, icon: Icon, path }) => (
-          <button key={path} onClick={() => onNavigate(path)} className={`flex flex-col items-center justify-center rounded-2xl gap-1 px-2 py-2 text-[10px] font-medium ${currentRoute === path ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
+          <button key={path} onClick={() => onNavigate(path)} className={`relative flex flex-col items-center justify-center rounded-2xl gap-1 px-2 py-2 text-[10px] font-medium ${currentRoute === path ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
             <Icon className="h-4 w-4" />
+            {path === '/admin/sugestoes' && notificationCount > 0 && (
+              <span className="absolute -right-1 -top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[8px] font-bold text-white">
+                {notificationCount}
+              </span>
+            )}
             <span>{label}</span>
           </button>
         ))}
@@ -883,10 +944,23 @@ function AppIcon({ app }: { app: AppItem }) {
   );
 }
 
-function ResidentPages({ route, data, onNavigate }: { route: string; data: PortalData; onNavigate: (path: string) => void }) {
+function ResidentPages({ route, data, onNavigate, session, onDataChange, onRefresh }: { route: string; data: PortalData; onNavigate: (path: string) => void; session: Session; onDataChange: (next: PortalData) => void; onRefresh: () => Promise<PortalData> }) {
   const todayIso = getTodayIso();
   const todayEvents = data.events.filter((event) => event.status === 'ATIVO' && event.date === todayIso);
   const nextEvents = [...data.events.filter((event) => event.status === 'ATIVO' && event.date >= todayIso)].sort((a, b) => a.date.localeCompare(b.date));
+
+  const persistSuggestions = async (items: SuggestionItem[]) => {
+    const next = { ...data, suggestions: items };
+    onDataChange(next);
+    await persistPortalData(next);
+    await fetch('/api/portal/suggestions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(items),
+    });
+    const refreshed = await onRefresh();
+    onDataChange(refreshed);
+  };
 
   switch (route) {
     case '/inicio':
@@ -999,6 +1073,9 @@ function ResidentPages({ route, data, onNavigate }: { route: string; data: Porta
         </div>
       );
 
+    case '/sugestoes':
+      return <ResidentSuggestionPage data={data.suggestions} session={session} onSave={persistSuggestions} />;
+
     case '/apps':
       return (
         <div className="space-y-6">
@@ -1031,6 +1108,195 @@ function ResidentPages({ route, data, onNavigate }: { route: string; data: Porta
     default:
       return <div />;
   }
+}
+
+function ResidentSuggestionPage({ data, session, onSave }: { data: SuggestionItem[]; session: Session; onSave: (items: SuggestionItem[]) => Promise<void> }) {
+  const [form, setForm] = useState({ title: '', category: 'Infraestrutura', description: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const residentEmail = session.username.includes('@') ? session.username : `${session.username}@villagiodilux.com.br`;
+  const residentSuggestions = data.filter((item) => {
+    const normalizedEmail = item.authorEmail.toLowerCase();
+    const sessionKey = session.username.toLowerCase();
+    return normalizedEmail === residentEmail.toLowerCase() || normalizedEmail === `${sessionKey}@villagiodilux.com.br` || item.authorName === session.name;
+  });
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!form.title.trim() || !form.description.trim()) {
+      setError('Preencha o título e a descrição da sugestão.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    const nextSuggestion: SuggestionItem = {
+      id: crypto.randomUUID(),
+      title: form.title.trim(),
+      description: form.description.trim(),
+      category: form.category,
+      authorName: session.name,
+      authorEmail: residentEmail,
+      unit: 'Unidade do morador',
+      createdAt: new Date().toISOString(),
+      status: 'nova',
+    };
+
+    try {
+      await onSave([nextSuggestion, ...data]);
+      setForm({ title: '', category: 'Infraestrutura', description: '' });
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Não foi possível registrar a sugestão.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="SUGESTÕES" subtitle="Compartilhe ideias e melhorias para o condomínio" />
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-xl font-semibold text-slate-900">Nova sugestão</h2>
+        <form onSubmit={handleSubmit} className="mt-4 grid gap-4 md:grid-cols-2">
+          <Input label="Título" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} className="md:col-span-2" />
+          <div className="md:col-span-2">
+            <label className="mb-2 block text-sm font-medium text-slate-700">Categoria</label>
+            <select
+              value={form.category}
+              onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none transition focus:border-emerald-300 focus:bg-white"
+            >
+              <option value="Infraestrutura">Infraestrutura</option>
+              <option value="Segurança">Segurança</option>
+              <option value="Lazer">Lazer</option>
+              <option value="Comunidade">Comunidade</option>
+              <option value="Sustentabilidade">Sustentabilidade</option>
+              <option value="Outros">Outros</option>
+            </select>
+          </div>
+          <textarea
+            value={form.description}
+            onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+            rows={5}
+            placeholder="Descreva sua ideia, por exemplo: vagas de visitantes, iluminação do parquinho, acessos aos portões, festa, natal, melhoria de áreas comuns..."
+            className="md:col-span-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none transition focus:border-emerald-300 focus:bg-white"
+          />
+          {error && <p className="md:col-span-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+          <div className="md:col-span-2 flex justify-end">
+            <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Enviando...' : 'Enviar sugestão'}</Button>
+          </div>
+        </form>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold text-slate-900">Minhas sugestões</h2>
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">{residentSuggestions.length} registro(s)</span>
+        </div>
+
+        {residentSuggestions.length ? (
+          <div className="space-y-4">
+            {residentSuggestions.map((item) => (
+              <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{item.category}</p>
+                    <h3 className="mt-1 text-lg font-semibold text-slate-900">{item.title}</h3>
+                  </div>
+                  <SuggestionStatusBadge status={item.status} />
+                </div>
+                <p className="mt-3 text-sm text-slate-600">{item.description}</p>
+                <p className="mt-3 text-xs text-slate-500">Enviada em {new Date(item.createdAt).toLocaleDateString('pt-BR')} · {item.unit}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState label="Você ainda não enviou nenhuma sugestão." />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminSuggestionPage({ suggestions, onSave }: { suggestions: SuggestionItem[]; onSave: (items: SuggestionItem[]) => Promise<void> }) {
+  const [items, setItems] = useState<SuggestionItem[]>(suggestions);
+
+  useEffect(() => {
+    setItems(suggestions);
+  }, [suggestions]);
+
+  const updateStatus = async (id: string, status: SuggestionStatus) => {
+    const nextItems = items.map((item) => (item.id === id ? { ...item, status } : item));
+    setItems(nextItems);
+    await onSave(nextItems);
+  };
+
+  const stats = {
+    nova: items.filter((item) => item.status === 'nova').length,
+    em_analise: items.filter((item) => item.status === 'em_analise').length,
+    aprovada: items.filter((item) => item.status === 'aprovada').length,
+    concluida: items.filter((item) => item.status === 'concluida').length,
+  };
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="SUGESTÕES" subtitle="Ideias e melhorias enviadas pelos moradores" />
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <InfoCard icon={<Bell className="h-4 w-4" />} title="Novas" value={String(stats.nova)} description="Sugestões ainda não avaliadas" />
+        <InfoCard icon={<CheckCircle2 className="h-4 w-4" />} title="Em análise" value={String(stats.em_analise)} description="Aguardando revisão da gestão" />
+        <InfoCard icon={<ShieldCheck className="h-4 w-4" />} title="Aprovadas" value={String(stats.aprovada)} description="Priorizadas para execução" />
+        <InfoCard icon={<Users className="h-4 w-4" />} title="Concluídas" value={String(stats.concluida)} description="Projetos finalizados" />
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold text-slate-900">Lista de sugestões</h2>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{items.length} total</span>
+        </div>
+
+        <div className="space-y-4">
+          {items.length ? items.map((item) => (
+            <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{item.category}</p>
+                  <h3 className="mt-1 text-lg font-semibold text-slate-900">{item.title}</h3>
+                </div>
+                <SuggestionStatusBadge status={item.status} />
+              </div>
+
+              <p className="mt-3 text-sm text-slate-600">{item.description}</p>
+
+              <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="text-xs text-slate-500">
+                  <p><span className="font-semibold">Autor:</span> {item.authorName}</p>
+                  <p><span className="font-semibold">Unidade:</span> {item.unit}</p>
+                  <p><span className="font-semibold">Enviada:</span> {new Date(item.createdAt).toLocaleDateString('pt-BR')}</p>
+                </div>
+
+                <select
+                  value={item.status}
+                  onChange={(event) => updateStatus(item.id, event.target.value as SuggestionStatus)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-300"
+                >
+                  <option value="nova">Nova</option>
+                  <option value="em_analise">Em análise</option>
+                  <option value="aprovada">Aprovada</option>
+                  <option value="em_execucao">Em execução</option>
+                  <option value="concluida">Concluída</option>
+                  <option value="rejeitada">Rejeitada</option>
+                </select>
+              </div>
+            </div>
+          )) : <EmptyState label="Ainda não há sugestões registradas." />}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function AdminPages({ route, data, onNavigate, onRefresh, lastSyncedAt, onDataChange }: { route: string; data: PortalData; onNavigate: (path: string) => void; onRefresh: () => Promise<PortalData>; lastSyncedAt: Date | null; onDataChange: (next: PortalData) => void; }) {
@@ -1081,6 +1347,8 @@ function AdminPages({ route, data, onNavigate, onRefresh, lastSyncedAt, onDataCh
       return <AdminCrudPage resource="events" title="Cronograma" data={resourceData.events as EventItem[]} onSave={async (items) => updateResource('events', items)} />;
     case '/admin/apps':
       return <AdminCrudPage resource="apps" title="Apps" data={resourceData.apps as AppItem[]} onSave={async (items) => updateResource('apps', items)} />;
+    case '/admin/sugestoes':
+      return <AdminSuggestionPage suggestions={resourceData.suggestions as SuggestionItem[]} onSave={async (items) => updateResource('suggestions', items)} />;
     case '/admin/documentos':
       return <AdminCrudPage resource="documents" title="Documentos" data={resourceData.documents as DocumentItem[]} onSave={async (items) => updateResource('documents', items)} />;
     default:

@@ -95,6 +95,20 @@ export type AppItem = {
   icon?: string;
 };
 
+export type SuggestionStatus = 'nova' | 'em_analise' | 'aprovada' | 'em_execucao' | 'concluida' | 'rejeitada';
+
+export type SuggestionItem = {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  authorName: string;
+  authorEmail: string;
+  unit: string;
+  createdAt: string;
+  status: SuggestionStatus;
+};
+
 export type PortalData = {
   config: PortalConfig;
   contacts: ContactItem[];
@@ -104,4 +118,5 @@ export type PortalData = {
   notices: NoticeItem[];
   documents: DocumentItem[];
   apps: AppItem[];
+  suggestions: SuggestionItem[];
 };
