@@ -6,7 +6,7 @@ import {
   residentUnitFromEmail,
   residentUsername,
   RESIDENT_ACCOUNT_PASSWORD,
-} from '../utils/residentAccounts';
+} from '../utils/residentAccounts.js';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL
   ?? process.env.NEXT_PUBLIC_SUPABASE_URL
