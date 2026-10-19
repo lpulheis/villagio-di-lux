@@ -3,7 +3,8 @@ import { Bell, CalendarDays, CheckCircle2, FileText, Home, KeyRound, LogOut, Men
 import { Button } from './components/ui/Button';
 import { Input } from './components/ui/Input';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
-import { signInWithSupabase } from './services/supabaseAuth';
+import { changeInitialPassword, getPortalSession, signInWithSupabase } from './services/supabaseAuth';
+import { createResidentUnitAccount, listResidentUnitAccounts, resetResidentUnitPassword, type ResidentUnitAccount } from './services/adminUsers';
 import { canAccessRoute, getNavigationItems, normalizeRoute, type PortalRole } from './utils/portalAccess';
 import type { AppItem, ContactItem, DocumentItem, EventItem, NoticeItem, PortalConfig, PortalData, ProfessionalItem, ScheduleItem, SuggestionItem, SuggestionStatus } from './types/portal';
 
@@ -11,6 +12,8 @@ type Session = {
   username: string;
   role: PortalRole;
   name: string;
+  mustChangePassword: boolean;
+  unit?: number;
 };
 
 type RouteState = {
@@ -498,14 +501,7 @@ const formatLastSync = (value: Date | null) => {
 };
 
 function App() {
-  const [session, setSession] = useState<Session | null>(() => {
-    try {
-      const raw = sessionStorage.getItem('villagio-session');
-      return raw ? (JSON.parse(raw) as Session) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [session, setSession] = useState<Session | null>(null);
 
   const [routeState, setRouteState] = useState<RouteState>({
     path: normalizeRoute(window.location.hash || '#/login'),
@@ -543,12 +539,12 @@ function App() {
         return;
       }
 
-      const user = data.session.user;
-      const role = typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : 'morador';
-      const username = typeof user.user_metadata?.username === 'string' ? user.user_metadata.username : (user.email ?? 'usuario');
-      const name = typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : (user.email?.split('@')[0] ?? 'Usuário');
+      const { data: userData, error: userError } = await client.auth.getUser(data.session.access_token);
+      if (!isMounted || userError || !userData.user) {
+        return;
+      }
 
-      setSession({ username, role: role as PortalRole, name });
+      setSession(getPortalSession(userData.user));
     };
 
     hydrateSupabaseSession();
@@ -558,12 +554,7 @@ function App() {
         return;
       }
 
-      const user = nextSession.user;
-      const role = typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : 'morador';
-      const username = typeof user.user_metadata?.username === 'string' ? user.user_metadata.username : (user.email ?? 'usuario');
-      const name = typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : (user.email?.split('@')[0] ?? 'Usuário');
-
-      setSession({ username, role: role as PortalRole, name });
+      setSession(getPortalSession(nextSession.user));
     });
 
     return () => {
@@ -586,6 +577,14 @@ function App() {
     if (!session) {
       if (routeState.path !== '/login') {
         window.location.hash = '#/login';
+      }
+      return;
+    }
+
+    if (session.mustChangePassword) {
+      if (routeState.path !== '/alterar-senha') {
+        window.location.hash = '#/alterar-senha';
+        setRouteState((current) => ({ ...current, path: '/alterar-senha' }));
       }
       return;
     }
@@ -623,7 +622,6 @@ function App() {
       await supabase.auth.signOut();
     }
 
-    sessionStorage.removeItem('villagio-session');
     setSession(null);
     setRouteState({ path: '/login', openMenu: false });
     window.location.hash = '#/login';
@@ -635,13 +633,27 @@ function App() {
     }
 
     const nextSession = await signInWithSupabase(credentials);
-    sessionStorage.setItem('villagio-session', JSON.stringify(nextSession));
     setSession(nextSession);
-    navigate(managementRoles.includes(nextSession.role as PortalRole) ? '/admin' : '/inicio');
+    navigate(nextSession.mustChangePassword
+      ? '/alterar-senha'
+      : managementRoles.includes(nextSession.role) ? '/admin' : '/inicio');
   };
 
   if (!session) {
     return <LoginPage onSubmit={authUser} />;
+  }
+
+  if (session.mustChangePassword) {
+    return (
+      <ChangePasswordPage
+        onSubmit={async (password) => {
+          const nextSession = await changeInitialPassword(password);
+          setSession(nextSession);
+          navigate(managementRoles.includes(nextSession.role) ? '/admin' : '/inicio');
+        }}
+        onLogout={logout}
+      />
+    );
   }
 
   if (routeState.path === '/login') {
@@ -656,6 +668,7 @@ function App() {
         currentRoute={routeState.path}
         onNavigate={navigate}
         onLogout={logout}
+        canManageAccounts={session.role === 'admin' || session.role === 'sindico'}
         openMenu={false}
         onToggleMenu={() => undefined}
         suggestionCount={getSuggestionNotificationCount(portalData.suggestions)}
@@ -671,14 +684,14 @@ function App() {
         {session.role === 'morador' ? (
           <ResidentPages route={routeState.path} data={portalData} onNavigate={navigate} session={session} onDataChange={syncPortalData} onRefresh={refreshPortalData} />
         ) : (
-          <AdminPages route={routeState.path} data={portalData} onNavigate={navigate} onRefresh={refreshPortalData} lastSyncedAt={lastSyncedAt} onDataChange={syncPortalData} />
+          <AdminPages route={routeState.path} data={portalData} session={session} onNavigate={navigate} onRefresh={refreshPortalData} lastSyncedAt={lastSyncedAt} onDataChange={syncPortalData} />
         )}
       </div>
 
       {session.role === 'morador' ? (
         <BottomNavigation currentRoute={routeState.path} onNavigate={navigate} />
       ) : (
-        <AdminBottomNavigation currentRoute={routeState.path} onNavigate={navigate} notificationCount={getSuggestionNotificationCount(portalData.suggestions)} />
+        <AdminBottomNavigation currentRoute={routeState.path} onNavigate={navigate} notificationCount={getSuggestionNotificationCount(portalData.suggestions)} canManageAccounts={session.role === 'admin' || session.role === 'sindico'} />
       )}
     </div>
   );
@@ -710,7 +723,7 @@ function LoginPage({ onSubmit }: { onSubmit: (credentials: { username: string; p
         <div className="mb-7 text-center">
           <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center overflow-hidden rounded-[28px] border border-emerald-200 bg-white shadow-[0_10px_30px_rgba(16,185,129,0.12)]">
             <img
-              src="https://www.construtoraelecon.com.br/wp-content/uploads/2022/08/villagio-di-lux-2.jpg"
+              src="/villagio-icon.jpg"
               alt="Villagio Di Lux"
               className="h-full w-full object-cover"
             />
@@ -735,11 +748,75 @@ function LoginPage({ onSubmit }: { onSubmit: (credentials: { username: string; p
   );
 }
 
+function ChangePasswordPage({
+  onSubmit,
+  onLogout,
+}: {
+  onSubmit: (password: string) => Promise<void>;
+  onLogout: () => Promise<void>;
+}) {
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+
+    if (password.length < 8) {
+      setError('A senha deve ter pelo menos 8 caracteres.');
+      return;
+    }
+    if (password === 'villagiodilux') {
+      setError('Escolha uma senha diferente da senha temporária.');
+      return;
+    }
+    if (password !== confirmation) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onSubmit(password);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Não foi possível atualizar a senha.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#f4fdf8_0%,_#edf7f2_25%,_#f8fafc_60%,_#f1f5f9_100%)] px-4 py-8">
+      <div className="w-full max-w-md rounded-[30px] border border-slate-200 bg-white/90 p-6 shadow-[0_22px_70px_rgba(15,23,42,0.08)] backdrop-blur-sm md:p-8">
+        <div className="mb-7 text-center">
+          <img src="/villagio-icon.jpg" alt="Villagio Di Lux" className="mx-auto mb-5 h-20 w-20 rounded-3xl object-cover shadow-sm ring-1 ring-slate-200" />
+          <p className="text-[10px] font-medium uppercase tracking-[0.38em] text-emerald-700">Primeiro acesso</p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">Crie sua senha pessoal</h1>
+          <p className="mt-3 text-sm text-slate-600">Para continuar, substitua a senha temporária por uma senha pessoal com pelo menos 8 caracteres.</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <Input label="Nova senha" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <Input label="Confirme a nova senha" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
+          {error && <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? 'Salvando...' : 'SALVAR SENHA'}
+          </Button>
+          <Button type="button" variant="secondary" className="w-full" onClick={() => void onLogout()}>Sair</Button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function AppHeader({
   session,
   currentRoute,
   onNavigate,
   onLogout,
+  canManageAccounts,
   openMenu,
   onToggleMenu,
   suggestionCount = 0,
@@ -748,6 +825,7 @@ function AppHeader({
   currentRoute: string;
   onNavigate: (path: string) => void;
   onLogout: () => void;
+  canManageAccounts: boolean;
   openMenu: boolean;
   onToggleMenu: () => void;
   suggestionCount?: number;
@@ -762,7 +840,7 @@ function AppHeader({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-3">
             <img
-              src="https://www.construtoraelecon.com.br/wp-content/uploads/2022/08/villagio-di-lux-2.jpg"
+              src="/villagio-icon.jpg"
               alt="Villagio Di Lux"
               className="h-11 w-11 rounded-2xl object-cover shadow-sm ring-1 ring-slate-200"
             />
@@ -775,7 +853,7 @@ function AppHeader({
 
         <div className="hidden items-center gap-6 md:flex">
           {isManagementRole ? (
-            <AdminNav currentRoute={currentRoute} onNavigate={onNavigate} compact notificationCount={suggestionNotifications} />
+            <AdminNav currentRoute={currentRoute} onNavigate={onNavigate} compact notificationCount={suggestionNotifications} canManageAccounts={canManageAccounts} />
           ) : (
             <ResidentNav currentRoute={currentRoute} onNavigate={onNavigate} compact />
           )}
@@ -822,7 +900,7 @@ function ResidentNav({ currentRoute, onNavigate, compact = false }: { currentRou
   );
 }
 
-function AdminNav({ currentRoute, onNavigate, compact = false, notificationCount = 0 }: { currentRoute: string; onNavigate: (path: string) => void; compact?: boolean; notificationCount?: number }) {
+function AdminNav({ currentRoute, onNavigate, compact = false, notificationCount = 0, canManageAccounts = false }: { currentRoute: string; onNavigate: (path: string) => void; compact?: boolean; notificationCount?: number; canManageAccounts?: boolean }) {
   const items = [
     { label: 'Início', path: '/admin' },
     { label: 'Horários', path: '/admin/horarios' },
@@ -830,6 +908,7 @@ function AdminNav({ currentRoute, onNavigate, compact = false, notificationCount
     { label: 'Contatos', path: '/admin/contatos' },
     { label: 'Sugestões', path: '/admin/sugestoes' },
     { label: 'Apps', path: '/admin/apps' },
+    ...(canManageAccounts ? [{ label: 'Usuários', path: '/admin/usuarios' }] : []),
   ];
 
   return (
@@ -879,7 +958,7 @@ function BottomNavigation({ currentRoute, onNavigate }: { currentRoute: string; 
   );
 }
 
-function AdminBottomNavigation({ currentRoute, onNavigate, notificationCount = 0 }: { currentRoute: string; onNavigate: (path: string) => void; notificationCount?: number }) {
+function AdminBottomNavigation({ currentRoute, onNavigate, notificationCount = 0, canManageAccounts = false }: { currentRoute: string; onNavigate: (path: string) => void; notificationCount?: number; canManageAccounts?: boolean }) {
   const items = [
     { label: 'Início', icon: Home, path: '/admin' },
     { label: 'Horários', icon: CalendarDays, path: '/admin/horarios' },
@@ -887,11 +966,12 @@ function AdminBottomNavigation({ currentRoute, onNavigate, notificationCount = 0
     { label: 'Contatos', icon: PhoneCall, path: '/admin/contatos' },
     { label: 'Sugestões', icon: Wrench, path: '/admin/sugestoes' },
     { label: 'Apps', icon: Smartphone, path: '/admin/apps' },
+    ...(canManageAccounts ? [{ label: 'Usuários', icon: Users, path: '/admin/usuarios' }] : []),
   ];
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-2 shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur md:hidden">
-      <div className="mx-auto grid max-w-lg grid-cols-6 gap-2">
+      <div className={`mx-auto grid max-w-lg gap-2 ${canManageAccounts ? 'grid-cols-7' : 'grid-cols-6'}`}>
         {items.map(({ label, icon: Icon, path }) => (
           <button key={path} onClick={() => onNavigate(path)} className={`relative flex flex-col items-center justify-center rounded-2xl gap-1 px-2 py-2 text-[10px] font-medium ${currentRoute === path ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
             <Icon className="h-4 w-4" />
@@ -1139,7 +1219,7 @@ function ResidentSuggestionPage({ data, session, onSave }: { data: SuggestionIte
       category: form.category,
       authorName: session.name,
       authorEmail: residentEmail,
-      unit: 'Unidade do morador',
+      unit: session.unit ? `Casa ${session.unit}` : 'Unidade do morador',
       createdAt: new Date().toISOString(),
       status: 'nova',
     };
@@ -1299,7 +1379,7 @@ function AdminSuggestionPage({ suggestions, onSave }: { suggestions: SuggestionI
   );
 }
 
-function AdminPages({ route, data, onNavigate, onRefresh, lastSyncedAt, onDataChange }: { route: string; data: PortalData; onNavigate: (path: string) => void; onRefresh: () => Promise<PortalData>; lastSyncedAt: Date | null; onDataChange: (next: PortalData) => void; }) {
+function AdminPages({ route, data, session, onNavigate, onRefresh, lastSyncedAt, onDataChange }: { route: string; data: PortalData; session: Session; onNavigate: (path: string) => void; onRefresh: () => Promise<PortalData>; lastSyncedAt: Date | null; onDataChange: (next: PortalData) => void; }) {
   const [resourceData, setResourceData] = useState(data);
 
   useEffect(() => {
@@ -1349,11 +1429,153 @@ function AdminPages({ route, data, onNavigate, onRefresh, lastSyncedAt, onDataCh
       return <AdminCrudPage resource="apps" title="Apps" data={resourceData.apps as AppItem[]} onSave={async (items) => updateResource('apps', items)} />;
     case '/admin/sugestoes':
       return <AdminSuggestionPage suggestions={resourceData.suggestions as SuggestionItem[]} onSave={async (items) => updateResource('suggestions', items)} />;
+    case '/admin/usuarios':
+      return session.role === 'admin' || session.role === 'sindico'
+        ? <AdminUsersPage />
+        : <div />;
     case '/admin/documentos':
       return <AdminCrudPage resource="documents" title="Documentos" data={resourceData.documents as DocumentItem[]} onSave={async (items) => updateResource('documents', items)} />;
     default:
       return <div />;
   }
+}
+
+function AdminUsersPage() {
+  const [accounts, setAccounts] = useState<ResidentUnitAccount[]>([]);
+  const [selectedUnit, setSelectedUnit] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [busyUnit, setBusyUnit] = useState<number | 'create' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const refreshAccounts = useCallback(async () => {
+    setError(null);
+    try {
+      const nextAccounts = await listResidentUnitAccounts();
+      setAccounts(nextAccounts);
+      setSelectedUnit((current) => current && !nextAccounts.find((account) => account.unit === Number(current))?.exists
+        ? current
+        : String(nextAccounts.find((account) => !account.exists)?.unit ?? ''));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar as contas.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshAccounts();
+  }, [refreshAccounts]);
+
+  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const unit = Number(selectedUnit);
+    if (!Number.isInteger(unit) || unit < 1 || unit > 48) return;
+
+    setBusyUnit('create');
+    setError(null);
+    setFeedback(null);
+    try {
+      const account = await createResidentUnitAccount(unit);
+      setFeedback(`Conta ${account.username} criada. Senha temporária: ${account.temporaryPassword}. Informe-a ao morador para o primeiro acesso.`);
+      await refreshAccounts();
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Não foi possível criar a conta.');
+    } finally {
+      setBusyUnit(null);
+    }
+  };
+
+  const handleReset = async (account: ResidentUnitAccount) => {
+    if (!window.confirm(`Redefinir a senha de ${account.username} para a senha temporária? A próxima entrada exigirá a criação de uma nova senha.`)) {
+      return;
+    }
+
+    setBusyUnit(account.unit);
+    setError(null);
+    setFeedback(null);
+    try {
+      const result = await resetResidentUnitPassword(account.unit);
+      setFeedback(`Senha de ${result.username} redefinida para ${result.temporaryPassword}. O morador deverá criar uma nova senha no próximo acesso.`);
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Não foi possível redefinir a senha.');
+    } finally {
+      setBusyUnit(null);
+    }
+  };
+
+  const availableAccounts = accounts.filter((account) => !account.exists);
+  const existingCount = accounts.filter((account) => account.exists).length;
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="Usuários" subtitle="Contas dos moradores por unidade" />
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-slate-900">Criar acesso de morador</h2>
+          <p className="mt-1 text-sm text-slate-600">Cria um usuário para a unidade selecionada, sempre com perfil de morador.</p>
+        </div>
+        <form onSubmit={handleCreate} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="block flex-1 text-sm font-medium text-slate-700">
+            Unidade
+            <select
+              aria-label="Unidade"
+              className="mt-1.5 block min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+              value={selectedUnit}
+              onChange={(event) => setSelectedUnit(event.target.value)}
+              disabled={isLoading || availableAccounts.length === 0}
+            >
+              {availableAccounts.length === 0
+                ? <option value="">Todas as unidades já possuem conta</option>
+                : availableAccounts.map((account) => <option key={account.unit} value={account.unit}>Casa {account.unit} — {account.username}</option>)}
+            </select>
+          </label>
+          <Button type="submit" disabled={isLoading || availableAccounts.length === 0 || busyUnit !== null}>
+            {busyUnit === 'create' ? 'Criando...' : 'Criar usuário'}
+          </Button>
+        </form>
+        <p className="mt-3 text-xs text-slate-500">A senha inicial é <strong>villagiodilux</strong> e deverá ser trocada no primeiro acesso.</p>
+        {error && <p role="alert" className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+        {feedback && <p role="status" className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{feedback}</p>}
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Unidades 1 a 48</h2>
+            <p className="mt-1 text-sm text-slate-600">{existingCount} de 48 unidades com conta criada.</p>
+          </div>
+          <Button type="button" variant="secondary" onClick={() => void refreshAccounts()} disabled={isLoading || busyUnit !== null}>
+            {isLoading ? 'Carregando...' : 'Atualizar'}
+          </Button>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {accounts.map((account) => (
+            <div key={account.unit} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 p-3">
+              <div>
+                <p className="font-medium text-slate-900">Casa {account.unit}</p>
+                <p className="text-xs text-slate-500">{account.username} · {account.exists ? 'Conta criada' : 'Sem conta'}</p>
+              </div>
+              {account.exists && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="shrink-0 px-3 py-2 text-xs"
+                  onClick={() => void handleReset(account)}
+                  disabled={busyUnit !== null}
+                >
+                  {busyUnit === account.unit ? 'Aguarde...' : 'Resetar senha'}
+                </Button>
+              )}
+            </div>
+          ))}
+          {!isLoading && accounts.length === 0 && !error && (
+            <p className="text-sm text-slate-500">Nenhuma unidade disponível.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function AdminCrudPage<T extends { id: string; status?: string }>({

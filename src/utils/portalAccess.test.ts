@@ -55,6 +55,13 @@ test('suggestion routes are allowed for residents and management', () => {
   assert.equal(canAccessRoute('morador', '/admin/sugestoes'), false);
 });
 
+test('resident account management is restricted to admins and the manager', () => {
+  assert.equal(canAccessRoute('admin', '/admin/usuarios'), true);
+  assert.equal(canAccessRoute('sindico', '/admin/usuarios'), true);
+  assert.equal(canAccessRoute('zelador', '/admin/usuarios'), false);
+  assert.equal(canAccessRoute('morador', '/admin/usuarios'), false);
+});
+
 test('navigation exposes suggestion entries for both resident and admin flows', () => {
   assert.ok(getNavigationItems('morador').includes('/sugestoes'));
   assert.ok(getNavigationItems('admin').includes('/admin/sugestoes'));

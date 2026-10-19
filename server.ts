@@ -1,10 +1,17 @@
 import 'dotenv/config';
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type User } from '@supabase/supabase-js';
 import { RegistrationService } from './src/services/registrationService.js';
 import type { RegistrationRepository } from './src/repositories/RegistrationRepository.js';
 import type { RegistrationData } from './src/types/registration.ts';
+import {
+  parseResidentUnit,
+  residentEmail,
+  residentUnitFromEmail,
+  residentUsername,
+  RESIDENT_ACCOUNT_PASSWORD,
+} from './src/utils/residentAccounts.js';
 
 export const app = express();
 const port = Number(process.env.API_PORT ?? 4179);
@@ -90,6 +97,85 @@ const supabaseAuth = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  ?? process.env.SERVICE_ROLE_KEY
+  ?? '';
+
+const supabaseAdmin = supabaseUrl && serviceRoleKey
+  ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+  : null;
+
+const authenticateAccountManager = async (req: Request, res: Response): Promise<User | null> => {
+  if (!supabaseAuth) {
+    res.status(503).json({ message: 'Supabase não está configurado no servidor.' });
+    return null;
+  }
+
+  const authorization = req.headers.authorization;
+  const accessToken = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  if (!accessToken) {
+    res.status(401).json({ message: 'Autenticação necessária.' });
+    return null;
+  }
+
+  let data: Awaited<ReturnType<typeof supabaseAuth.auth.getUser>>['data'];
+  let error: Awaited<ReturnType<typeof supabaseAuth.auth.getUser>>['error'];
+  try {
+    ({ data, error } = await supabaseAuth.auth.getUser(accessToken));
+  } catch (authError) {
+    console.error('Failed to validate account manager session:', authError);
+    res.status(503).json({ message: 'Não foi possível validar sua sessão agora.' });
+    return null;
+  }
+  if (error || !data.user) {
+    res.status(401).json({ message: 'Sessão inválida ou expirada.' });
+    return null;
+  }
+
+  const role = data.user.app_metadata?.role;
+  if (role !== 'admin' && role !== 'sindico') {
+    res.status(403).json({ message: 'Apenas síndico e admin podem gerenciar contas.' });
+    return null;
+  }
+
+  if (data.user.app_metadata?.must_change_password === true) {
+    res.status(403).json({ message: 'Altere sua senha antes de gerenciar contas.' });
+    return null;
+  }
+
+  return data.user;
+};
+
+const listAuthUsers = async (): Promise<User[]> => {
+  if (!supabaseAdmin) {
+    throw new Error('Supabase Admin não configurado.');
+  }
+
+  const users: User[] = [];
+  const perPage = 1000;
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      throw error;
+    }
+
+    users.push(...data.users);
+    if (data.users.length < perPage) {
+      return users;
+    }
+  }
+};
+
+const findResidentUser = async (unit: number): Promise<User | undefined> => {
+  const email = residentEmail(unit);
+  return (await listAuthUsers()).find((user) => user.email?.toLowerCase() === email);
+};
+
 const persistPortalState = async (nextState: Record<string, unknown>) => {
   if (!supabaseAuth) {
     return;
@@ -128,7 +214,7 @@ export const validateUserLogin = async (username: string, password: string): Pro
     }
 
     const user = data.user;
-    const role = typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : 'morador';
+    const role = typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : 'morador';
     const name = typeof user.user_metadata?.full_name === 'string'
       ? user.user_metadata.full_name
       : (user.email?.split('@')[0] ?? normalized);
@@ -166,6 +252,185 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 
   return res.json({ user });
+});
+
+app.post('/api/auth/password/change', async (req: Request, res: Response) => {
+  if (!supabaseAuth || !supabaseAdmin) {
+    return res.status(503).json({ message: 'Supabase Admin não está configurado no servidor.' });
+  }
+
+  const authorization = req.headers.authorization;
+  const accessToken = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  if (!accessToken) {
+    return res.status(401).json({ message: 'Autenticação necessária.' });
+  }
+
+  let data: Awaited<ReturnType<typeof supabaseAuth.auth.getUser>>['data'];
+  let error: Awaited<ReturnType<typeof supabaseAuth.auth.getUser>>['error'];
+  try {
+    ({ data, error } = await supabaseAuth.auth.getUser(accessToken));
+  } catch (authError) {
+    console.error('Failed to validate session for password change:', authError);
+    return res.status(503).json({ message: 'Não foi possível validar sua sessão agora.' });
+  }
+  if (error || !data.user) {
+    return res.status(401).json({ message: 'Sessão inválida ou expirada.' });
+  }
+
+  if (data.user.app_metadata?.must_change_password !== true) {
+    return res.status(400).json({ message: 'Esta conta não está aguardando a troca obrigatória de senha.' });
+  }
+
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (password.length < 8 || password.length > 128) {
+    return res.status(400).json({ message: 'A nova senha deve ter entre 8 e 128 caracteres.' });
+  }
+
+  if (password === RESIDENT_ACCOUNT_PASSWORD) {
+    return res.status(400).json({ message: 'Escolha uma senha diferente da senha temporária.' });
+  }
+
+  const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(data.user.id, {
+    password,
+    app_metadata: { ...data.user.app_metadata, must_change_password: false },
+  });
+
+  if (updateError) {
+    console.error('Failed to complete required password change:', updateError.message);
+    return res.status(500).json({ message: 'Não foi possível atualizar a senha. Tente novamente.' });
+  }
+
+  return res.json({ success: true });
+});
+
+app.get('/api/admin/units', async (req: Request, res: Response) => {
+  const manager = await authenticateAccountManager(req, res);
+  if (!manager) return;
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ message: 'Configure SUPABASE_SERVICE_ROLE_KEY no servidor.' });
+  }
+
+  try {
+    const users = await listAuthUsers();
+    const units = users.reduce((accounts, user) => {
+      const unit = residentUnitFromEmail(user.email);
+      if (unit !== null) {
+        accounts.add(unit);
+      }
+      return accounts;
+    }, new Set<number>());
+
+    return res.json({
+      units: Array.from({ length: 48 }, (_, index) => {
+        const unit = index + 1;
+        return { unit, username: residentUsername(unit), exists: units.has(unit) };
+      }),
+    });
+  } catch (error) {
+    console.error('Failed to list resident accounts:', error);
+    return res.status(500).json({ message: 'Não foi possível carregar as contas das unidades.' });
+  }
+});
+
+app.post('/api/admin/units', async (req: Request, res: Response) => {
+  const manager = await authenticateAccountManager(req, res);
+  if (!manager) return;
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ message: 'Configure SUPABASE_SERVICE_ROLE_KEY no servidor.' });
+  }
+
+  const unit = parseResidentUnit(req.body?.unit);
+  if (unit === null) {
+    return res.status(400).json({ message: 'Informe uma unidade inteira entre 1 e 48.' });
+  }
+
+  try {
+    if (await findResidentUser(unit)) {
+      return res.status(409).json({ message: `A conta casa${unit} já existe.` });
+    }
+
+    const username = residentUsername(unit);
+    const { error } = await supabaseAdmin.auth.admin.createUser({
+      email: residentEmail(unit),
+      password: RESIDENT_ACCOUNT_PASSWORD,
+      email_confirm: true,
+      user_metadata: {
+        username,
+        full_name: `Morador - Casa ${unit}`,
+        unit,
+      },
+      app_metadata: {
+        role: 'morador',
+        must_change_password: true,
+      },
+    });
+
+    if (error) {
+      console.error(`Failed to create resident account casa${unit}:`, error.message);
+      const alreadyExists = error.message.toLowerCase().includes('already')
+        || error.message.toLowerCase().includes('exists');
+      return res.status(alreadyExists ? 409 : 500).json({
+        message: alreadyExists
+          ? 'Esta conta já existe. Atualize a lista de unidades.'
+          : 'Não foi possível criar a conta da unidade.',
+      });
+    }
+
+    return res.status(201).json({ unit, username, temporaryPassword: RESIDENT_ACCOUNT_PASSWORD });
+  } catch (error) {
+    console.error(`Failed to create resident account casa${unit}:`, error);
+    return res.status(500).json({ message: 'Não foi possível criar a conta da unidade.' });
+  }
+});
+
+app.post('/api/admin/units/:unit/reset-password', async (req: Request<{ unit: string }>, res: Response) => {
+  const manager = await authenticateAccountManager(req, res);
+  if (!manager) return;
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ message: 'Configure SUPABASE_SERVICE_ROLE_KEY no servidor.' });
+  }
+
+  const unit = parseResidentUnit(req.params.unit);
+  if (unit === null) {
+    return res.status(400).json({ message: 'Informe uma unidade inteira entre 1 e 48.' });
+  }
+
+  try {
+    const user = await findResidentUser(unit);
+    if (!user || (user.app_metadata?.role !== 'morador' && user.user_metadata?.role !== 'morador')) {
+      return res.status(404).json({ message: `Não foi encontrada uma conta de morador para casa${unit}.` });
+    }
+
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+      password: RESIDENT_ACCOUNT_PASSWORD,
+      app_metadata: {
+        ...user.app_metadata,
+        role: 'morador',
+        must_change_password: true,
+      },
+    });
+
+    if (error) {
+      console.error(`Failed to reset password for casa${unit}:`, error.message);
+      return res.status(500).json({ message: 'Não foi possível redefinir a senha desta unidade.' });
+    }
+
+    const { error: signOutError } = await supabaseAdmin.auth.admin.signOut(user.id, 'global');
+    if (signOutError) {
+      console.error(`Password reset but could not revoke sessions for casa${unit}:`, signOutError.message);
+      return res.status(500).json({
+        message: 'A senha foi redefinida, mas não foi possível encerrar as sessões existentes. Contate o suporte.',
+      });
+    }
+
+    return res.json({ unit, username: residentUsername(unit), temporaryPassword: RESIDENT_ACCOUNT_PASSWORD });
+  } catch (error) {
+    console.error(`Failed to reset password for casa${unit}:`, error);
+    return res.status(500).json({ message: 'Não foi possível redefinir a senha desta unidade.' });
+  }
 });
 
 app.get('/api/portal', (_req: Request, res: Response) => {
@@ -233,7 +498,7 @@ app.post('/api/registrations', async (req: Request, res: Response) => {
   }
 });
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && process.env.VERCEL !== '1') {
   app.listen(port, '0.0.0.0', () => {
     console.log(`API de cadastro e portal rodando em http://localhost:${port}`);
   });

@@ -18,6 +18,7 @@ export const adminRoutes = [
   '/admin/apps',
   '/admin/configuracoes',
   '/admin/sugestoes',
+  '/admin/usuarios',
 ];
 
 const managementRoles: PortalRole[] = ['admin', 'sindico', 'zelador'];
@@ -44,6 +45,10 @@ export const canAccessRoute = (role: PortalRole | null | undefined, route: strin
 
   if (normalized === '/login') {
     return false;
+  }
+
+  if (normalized === '/admin/usuarios') {
+    return role === 'admin' || role === 'sindico';
   }
 
   if (role === 'admin') {
