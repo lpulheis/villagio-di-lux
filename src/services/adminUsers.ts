@@ -2,8 +2,13 @@ import { supabase } from '../lib/supabase';
 
 export type ResidentUnitAccount = {
   unit: number;
-  username: string;
-  exists: boolean;
+  residents: ResidentAccount[];
+};
+
+export type ResidentAccount = {
+  id: string;
+  name: string;
+  email: string;
 };
 
 type ApiMessage = {
@@ -57,21 +62,25 @@ export const listResidentUnitAccounts = async (): Promise<ResidentUnitAccount[]>
   const result = await requestAdminApi<{ units: ResidentUnitAccount[] }>('/api/admin/units');
   if (!Array.isArray(result.units) || result.units.some((account) =>
     !Number.isInteger(account.unit)
-    || typeof account.username !== 'string'
-    || typeof account.exists !== 'boolean'
+    || !Array.isArray(account.residents)
+    || account.residents.some((resident) =>
+      typeof resident.id !== 'string'
+      || typeof resident.name !== 'string'
+      || typeof resident.email !== 'string'
+    )
   )) {
     throw new Error('A API de usuários retornou uma lista de unidades inválida. Verifique a configuração do Vercel.');
   }
   return result.units;
 };
 
-export const createResidentUnitAccount = async (unit: number): Promise<{ username: string; temporaryPassword: string }> =>
+export const createResidentUnitAccount = async (unit: number, fullName: string): Promise<{ unit: number; username: string; temporaryPassword: string }> =>
   requestAdminApi('/api/admin/units', {
     method: 'POST',
-    body: JSON.stringify({ unit }),
+    body: JSON.stringify({ unit, fullName }),
   });
 
-export const resetResidentUnitPassword = async (unit: number): Promise<{ username: string; temporaryPassword: string }> =>
-  requestAdminApi(`/api/admin/units/${unit}/reset-password`, {
+export const resetResidentUnitPassword = async (residentId: string): Promise<{ unit: number; username: string; temporaryPassword: string }> =>
+  requestAdminApi(`/api/admin/residents/${encodeURIComponent(residentId)}/reset-password`, {
     method: 'POST',
   });

@@ -68,9 +68,9 @@ A variável `SUPABASE_SERVICE_ROLE_KEY` deve ficar apenas no ambiente do servido
 
 ### Contas dos moradores
 
-Na tela **Administração > Usuários**, o síndico e o admin podem criar e redefinir contas das casas 1 a 48. Cada conta usa o login `casaN` (por exemplo, `casa1`) e o perfil `morador`. A senha temporária é `villagiodilux`; no primeiro acesso, o morador precisa criar uma senha pessoal com pelo menos 8 caracteres.
+Na tela **Administração > Usuários**, o síndico e o admin podem criar várias contas individuais para cada casa de 1 a 48. No cadastro, o e-mail de acesso é formado pelo nome informado e pelo domínio `@villagiodilux.com.br` (por exemplo, `Maria da Silva` vira `maria.da.silva@villagiodilux.com.br`); o perfil é sempre `morador` e o e-mail não pode ser alterado pelo morador. A senha temporária é `villagiodilux`; no primeiro acesso, o morador confirma o nome e precisa criar uma senha pessoal com pelo menos 8 caracteres. O nome pode ser alterado depois na área **Meu perfil**.
 
-Uma alteração futura de senha deve ser solicitada ao síndico ou ao admin, que pode redefini-la pela mesma tela. O próximo login volta a exigir uma senha pessoal. O frontend nunca recebe a chave de serviço: as operações administrativas são executadas pela API do servidor e exigem `SUPABASE_SERVICE_ROLE_KEY`.
+Uma alteração futura de senha deve ser solicitada ao síndico ou ao admin, que pode redefinir individualmente a senha pela mesma tela. O próximo login volta a exigir uma senha pessoal. O frontend nunca recebe a chave de serviço: as operações administrativas são executadas pela API do servidor e exigem `SUPABASE_SERVICE_ROLE_KEY`.
 
 As permissões de gestão são lidas de `app_metadata.role`, que não pode ser alterado pelo próprio usuário. Para sincronizar os perfis de gestão existentes com esse campo protegido, execute uma vez `npm run sync:supabase-roles` com as variáveis do Supabase disponíveis no ambiente local. O script atualiza somente os perfis conhecidos que já existem, não cria usuários e não altera senhas.
 

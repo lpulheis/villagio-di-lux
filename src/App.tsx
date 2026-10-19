@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { Bell, CalendarDays, CheckCircle2, Eye, EyeOff, FileText, Home, KeyRound, LogOut, Menu, PhoneCall, RefreshCcw, Settings, ShieldCheck, Smartphone, UserRound, Users, Wrench, X } from 'lucide-react';
+import { Bell, CalendarDays, CheckCircle2, Eye, EyeOff, FileText, Home, KeyRound, LogOut, Menu, PhoneCall, RefreshCcw, Settings, ShieldCheck, Smartphone, Users, Wrench, X } from 'lucide-react';
 import { Button } from './components/ui/Button';
 import { Input } from './components/ui/Input';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
-import { changeInitialPassword, getPortalSession, signInWithSupabase } from './services/supabaseAuth';
+import { changeInitialPassword, getPortalSession, signInWithSupabase, updateResidentProfileName } from './services/supabaseAuth';
 import { createResidentUnitAccount, listResidentUnitAccounts, resetResidentUnitPassword, type ResidentUnitAccount } from './services/adminUsers';
 import { canAccessRoute, getNavigationItems, normalizeRoute, type PortalRole } from './utils/portalAccess';
 import type { AppItem, ContactItem, DocumentItem, EventItem, NoticeItem, PortalConfig, PortalData, ProfessionalItem, ScheduleItem, SuggestionItem, SuggestionStatus } from './types/portal';
@@ -618,13 +618,20 @@ function App() {
   };
 
   const logout = async () => {
-    if (hasSupabaseConfig && supabase) {
-      await supabase.auth.signOut();
-    }
-
     setSession(null);
     setRouteState({ path: '/login', openMenu: false });
     window.location.hash = '#/login';
+
+    if (hasSupabaseConfig && supabase) {
+      try {
+        const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+        if (signOutError) {
+          console.error('Failed to clear the local Supabase session:', signOutError.message);
+        }
+      } catch (signOutError) {
+        console.error('Failed to clear the local Supabase session:', signOutError);
+      }
+    }
   };
 
   const authUser = async (credentials: { username: string; password: string }) => {
@@ -646,8 +653,10 @@ function App() {
   if (session.mustChangePassword) {
     return (
       <ChangePasswordPage
-        onSubmit={async (password) => {
-          const nextSession = await changeInitialPassword(password);
+        initialName={session.name}
+        loginEmail={session.username}
+        onSubmit={async (password, fullName) => {
+          const nextSession = await changeInitialPassword(password, fullName);
           setSession(nextSession);
           navigate(managementRoles.includes(nextSession.role) ? '/admin' : '/inicio');
         }}
@@ -668,6 +677,7 @@ function App() {
         currentRoute={routeState.path}
         onNavigate={navigate}
         onLogout={logout}
+        onProfileClick={session.role === 'morador' ? () => navigate('/perfil') : undefined}
         canManageAccounts={session.role === 'admin' || session.role === 'sindico'}
         openMenu={false}
         onToggleMenu={() => undefined}
@@ -682,7 +692,15 @@ function App() {
         )}
 
         {session.role === 'morador' ? (
-          <ResidentPages route={routeState.path} data={portalData} onNavigate={navigate} session={session} onDataChange={syncPortalData} onRefresh={refreshPortalData} />
+          <ResidentPages
+            route={routeState.path}
+            data={portalData}
+            onNavigate={navigate}
+            session={session}
+            onDataChange={syncPortalData}
+            onRefresh={refreshPortalData}
+            onProfileNameChange={async (name) => setSession(await updateResidentProfileName(name))}
+          />
         ) : (
           <AdminPages route={routeState.path} data={portalData} session={session} onNavigate={navigate} onRefresh={refreshPortalData} lastSyncedAt={lastSyncedAt} onDataChange={syncPortalData} />
         )}
@@ -767,14 +785,21 @@ function LoginPage({ onSubmit }: { onSubmit: (credentials: { username: string; p
 }
 
 function ChangePasswordPage({
+  initialName,
+  loginEmail,
   onSubmit,
   onLogout,
 }: {
-  onSubmit: (password: string) => Promise<void>;
+  initialName: string;
+  loginEmail: string;
+  onSubmit: (password: string, fullName: string) => Promise<void>;
   onLogout: () => Promise<void>;
 }) {
+  const [fullName, setFullName] = useState(initialName);
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -794,10 +819,14 @@ function ChangePasswordPage({
       setError('As senhas não coincidem.');
       return;
     }
+    if (fullName.trim().length < 2 || fullName.trim().length > 80) {
+      setError('Informe seu nome com entre 2 e 80 caracteres.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
-      await onSubmit(password);
+      await onSubmit(password, fullName.trim());
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Não foi possível atualizar a senha.');
     } finally {
@@ -811,13 +840,43 @@ function ChangePasswordPage({
         <div className="mb-7 text-center">
           <img src="/villagio-icon.jpg" alt="Villagio Di Lux" className="mx-auto mb-5 h-20 w-20 rounded-3xl object-cover shadow-sm ring-1 ring-slate-200" />
           <p className="text-[10px] font-medium uppercase tracking-[0.38em] text-emerald-700">Primeiro acesso</p>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">Crie sua senha pessoal</h1>
-          <p className="mt-3 text-sm text-slate-600">Para continuar, substitua a senha temporária por uma senha pessoal com pelo menos 8 caracteres.</p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">Complete seu perfil</h1>
+          <p className="mt-3 text-sm text-slate-600">Confirme seu nome e crie uma senha pessoal para continuar.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <Input label="Nova senha" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
-          <Input label="Confirme a nova senha" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
+          <Input label="E-mail de acesso (fixo)" value={loginEmail} readOnly />
+          <Input label="Seu nome" autoComplete="name" value={fullName} onChange={(event) => setFullName(event.target.value)} />
+          <label className="grid gap-2 text-sm text-slate-700">
+            <span className="font-medium">Nova senha</span>
+            <span className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 focus:outline-none"
+              />
+              <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={showPassword} className="absolute inset-y-0 right-3 flex items-center text-slate-500 hover:text-slate-800">
+                {showPassword ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
+              </button>
+            </span>
+          </label>
+          <label className="grid gap-2 text-sm text-slate-700">
+            <span className="font-medium">Confirme a nova senha</span>
+            <span className="relative">
+              <input
+                type={showConfirmation ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 focus:outline-none"
+              />
+              <button type="button" onClick={() => setShowConfirmation((visible) => !visible)} aria-label={showConfirmation ? 'Ocultar confirmação da senha' : 'Mostrar confirmação da senha'} aria-pressed={showConfirmation} className="absolute inset-y-0 right-3 flex items-center text-slate-500 hover:text-slate-800">
+                {showConfirmation ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
+              </button>
+            </span>
+          </label>
           {error && <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
           <Button type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? 'Salvando...' : 'SALVAR SENHA'}
@@ -834,6 +893,7 @@ function AppHeader({
   currentRoute,
   onNavigate,
   onLogout,
+  onProfileClick,
   canManageAccounts,
   openMenu,
   onToggleMenu,
@@ -843,6 +903,7 @@ function AppHeader({
   currentRoute: string;
   onNavigate: (path: string) => void;
   onLogout: () => void;
+  onProfileClick?: () => void;
   canManageAccounts: boolean;
   openMenu: boolean;
   onToggleMenu: () => void;
@@ -878,9 +939,15 @@ function AppHeader({
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 sm:block">
-            {session.name}
-          </div>
+          {onProfileClick ? (
+            <button type="button" onClick={onProfileClick} className="max-w-32 truncate rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 sm:max-w-none">
+              {session.name}
+            </button>
+          ) : (
+            <div className="hidden max-w-40 truncate rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 sm:block">
+              {session.name}
+            </div>
+          )}
           <Button variant="secondary" onClick={onLogout} className="gap-2 px-4 py-2">
             <LogOut className="h-4 w-4" />
             <span className="hidden sm:inline">Sair</span>
@@ -899,6 +966,7 @@ function ResidentNav({ currentRoute, onNavigate, compact = false }: { currentRou
     { label: 'Contatos', path: '/contatos' },
     { label: 'Sugestões', path: '/sugestoes' },
     { label: 'Apps', path: '/apps' },
+    { label: 'Perfil', path: '/perfil' },
   ];
 
   return (
@@ -1042,7 +1110,7 @@ function AppIcon({ app }: { app: AppItem }) {
   );
 }
 
-function ResidentPages({ route, data, onNavigate, session, onDataChange, onRefresh }: { route: string; data: PortalData; onNavigate: (path: string) => void; session: Session; onDataChange: (next: PortalData) => void; onRefresh: () => Promise<PortalData> }) {
+function ResidentPages({ route, data, onNavigate, session, onDataChange, onRefresh, onProfileNameChange }: { route: string; data: PortalData; onNavigate: (path: string) => void; session: Session; onDataChange: (next: PortalData) => void; onRefresh: () => Promise<PortalData>; onProfileNameChange: (name: string) => Promise<void> }) {
   const todayIso = getTodayIso();
   const todayEvents = data.events.filter((event) => event.status === 'ATIVO' && event.date === todayIso);
   const nextEvents = [...data.events.filter((event) => event.status === 'ATIVO' && event.date >= todayIso)].sort((a, b) => a.date.localeCompare(b.date));
@@ -1061,6 +1129,9 @@ function ResidentPages({ route, data, onNavigate, session, onDataChange, onRefre
   };
 
   switch (route) {
+    case '/perfil':
+      return <ResidentProfilePage session={session} onNameChange={onProfileNameChange} />;
+
     case '/inicio':
       return (
         <div className="space-y-6">
@@ -1206,6 +1277,65 @@ function ResidentPages({ route, data, onNavigate, session, onDataChange, onRefre
     default:
       return <div />;
   }
+}
+
+function ResidentProfilePage({ session, onNameChange }: { session: Session; onNameChange: (name: string) => Promise<void> }) {
+  const [name, setName] = useState(session.name);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    setName(session.name);
+  }, [session.name]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    setFeedback(null);
+    setIsSaving(true);
+    try {
+      await onNameChange(name);
+      setFeedback('Seu nome foi atualizado.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível atualizar seu nome.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-6">
+      <SectionHeader title="Meu perfil" subtitle="Seus dados de acesso e identificação" />
+      <form onSubmit={handleSubmit} className="space-y-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <label className="grid gap-2 text-sm text-slate-700">
+          <span className="font-medium">Nome</span>
+          <input
+            autoComplete="name"
+            maxLength={80}
+            minLength={2}
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+          />
+        </label>
+        <label className="grid gap-2 text-sm text-slate-700">
+          <span className="font-medium">E-mail de acesso (não pode ser alterado)</span>
+          <input readOnly value={session.username} className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-600" />
+        </label>
+        <label className="grid gap-2 text-sm text-slate-700">
+          <span className="font-medium">Unidade</span>
+          <input readOnly value={session.unit ? `Casa ${session.unit}` : 'Não identificada'} className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-600" />
+        </label>
+        {error && <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+        {feedback && <p role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{feedback}</p>}
+        <Button type="submit" disabled={isSaving || name.trim() === session.name}>
+          {isSaving ? 'Salvando...' : 'Salvar nome'}
+        </Button>
+      </form>
+    </div>
+  );
 }
 
 function ResidentSuggestionPage({ data, session, onSave }: { data: SuggestionItem[]; session: Session; onSave: (items: SuggestionItem[]) => Promise<void> }) {
@@ -1460,9 +1590,10 @@ function AdminPages({ route, data, session, onNavigate, onRefresh, lastSyncedAt,
 
 function AdminUsersPage() {
   const [accounts, setAccounts] = useState<ResidentUnitAccount[]>([]);
-  const [selectedUnit, setSelectedUnit] = useState('');
+  const [selectedUnit, setSelectedUnit] = useState('1');
+  const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [busyUnit, setBusyUnit] = useState<number | 'create' | null>(null);
+  const [busyAccount, setBusyAccount] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -1471,9 +1602,6 @@ function AdminUsersPage() {
     try {
       const nextAccounts = await listResidentUnitAccounts();
       setAccounts(nextAccounts);
-      setSelectedUnit((current) => current && !nextAccounts.find((account) => account.unit === Number(current))?.exists
-        ? current
-        : String(nextAccounts.find((account) => !account.exists)?.unit ?? ''));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar as contas.');
     } finally {
@@ -1488,42 +1616,43 @@ function AdminUsersPage() {
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const unit = Number(selectedUnit);
-    if (!Number.isInteger(unit) || unit < 1 || unit > 48) return;
+    if (!Number.isInteger(unit) || unit < 1 || unit > 48 || fullName.trim().length < 2) return;
 
-    setBusyUnit('create');
+    setBusyAccount('create');
     setError(null);
     setFeedback(null);
     try {
-      const account = await createResidentUnitAccount(unit);
-      setFeedback(`Conta ${account.username} criada. Senha temporária: ${account.temporaryPassword}. Informe-a ao morador para o primeiro acesso.`);
+      const account = await createResidentUnitAccount(unit, fullName.trim());
+      setFeedback(`Conta ${account.username} criada para a Casa ${account.unit}. Senha temporária: ${account.temporaryPassword}. Informe-a ao morador para o primeiro acesso.`);
+      setFullName('');
       await refreshAccounts();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Não foi possível criar a conta.');
     } finally {
-      setBusyUnit(null);
+      setBusyAccount(null);
     }
   };
 
-  const handleReset = async (account: ResidentUnitAccount) => {
-    if (!window.confirm(`Redefinir a senha de ${account.username} para a senha temporária? A próxima entrada exigirá a criação de uma nova senha.`)) {
+  const handleReset = async (unit: number, resident: ResidentUnitAccount['residents'][number]) => {
+    if (!window.confirm(`Redefinir a senha de ${resident.email} para a senha temporária? A próxima entrada exigirá a criação de uma nova senha.`)) {
       return;
     }
 
-    setBusyUnit(account.unit);
+    setBusyAccount(resident.id);
     setError(null);
     setFeedback(null);
     try {
-      const result = await resetResidentUnitPassword(account.unit);
-      setFeedback(`Senha de ${result.username} redefinida para ${result.temporaryPassword}. O morador deverá criar uma nova senha no próximo acesso.`);
+      const result = await resetResidentUnitPassword(resident.id);
+      setFeedback(`Senha de ${result.username} redefinida para ${result.temporaryPassword}. O morador da Casa ${unit} deverá criar uma nova senha no próximo acesso.`);
     } catch (resetError) {
       setError(resetError instanceof Error ? resetError.message : 'Não foi possível redefinir a senha.');
     } finally {
-      setBusyUnit(null);
+      setBusyAccount(null);
     }
   };
 
-  const availableAccounts = accounts.filter((account) => !account.exists);
-  const existingCount = accounts.filter((account) => account.exists).length;
+  const existingCount = accounts.filter((account) => account.residents.length > 0).length;
+  const residentCount = accounts.reduce((count, account) => count + account.residents.length, 0);
 
   return (
     <div className="space-y-6">
@@ -1531,9 +1660,9 @@ function AdminUsersPage() {
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-slate-900">Criar acesso de morador</h2>
-          <p className="mt-1 text-sm text-slate-600">Cria um usuário para a unidade selecionada, sempre com perfil de morador.</p>
+          <p className="mt-1 text-sm text-slate-600">Crie um acesso individual associado à unidade. Uma unidade pode ter várias contas.</p>
         </div>
-        <form onSubmit={handleCreate} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <form onSubmit={handleCreate} className="grid gap-3 sm:grid-cols-[1fr_2fr_auto] sm:items-end">
           <label className="block flex-1 text-sm font-medium text-slate-700">
             Unidade
             <select
@@ -1541,18 +1670,31 @@ function AdminUsersPage() {
               className="mt-1.5 block min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
               value={selectedUnit}
               onChange={(event) => setSelectedUnit(event.target.value)}
-              disabled={isLoading || availableAccounts.length === 0}
+              disabled={isLoading || busyAccount !== null}
             >
-              {availableAccounts.length === 0
-                ? <option value="">Todas as unidades já possuem conta</option>
-                : availableAccounts.map((account) => <option key={account.unit} value={account.unit}>Casa {account.unit} — {account.username}</option>)}
+              {Array.from({ length: 48 }, (_, index) => index + 1).map((unit) => (
+                <option key={unit} value={unit}>Casa {unit}</option>
+              ))}
             </select>
           </label>
-          <Button type="submit" disabled={isLoading || availableAccounts.length === 0 || busyUnit !== null}>
-            {busyUnit === 'create' ? 'Criando...' : 'Criar usuário'}
+          <label className="block text-sm font-medium text-slate-700">
+            Nome do morador
+            <input
+              autoComplete="name"
+              maxLength={80}
+              minLength={2}
+              required
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              placeholder="Ex.: Maria da Silva"
+              className="mt-1.5 block min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+            />
+          </label>
+          <Button type="submit" disabled={isLoading || busyAccount !== null}>
+            {busyAccount === 'create' ? 'Criando...' : 'Criar usuário'}
           </Button>
         </form>
-        <p className="mt-3 text-xs text-slate-500">A senha inicial é <strong>villagiodilux</strong> e deverá ser trocada no primeiro acesso.</p>
+        <p className="mt-3 text-xs text-slate-500">O e-mail de acesso é gerado pelo nome e não poderá ser alterado. A senha inicial é <strong>villagiodilux</strong> e deverá ser trocada no primeiro acesso.</p>
         {error && <p role="alert" className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
         {feedback && <p role="status" className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{feedback}</p>}
       </div>
@@ -1561,29 +1703,38 @@ function AdminUsersPage() {
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Unidades 1 a 48</h2>
-            <p className="mt-1 text-sm text-slate-600">{existingCount} de 48 unidades com conta criada.</p>
+            <p className="mt-1 text-sm text-slate-600">{existingCount} unidades com contas · {residentCount} usuários</p>
           </div>
-          <Button type="button" variant="secondary" onClick={() => void refreshAccounts()} disabled={isLoading || busyUnit !== null}>
+          <Button type="button" variant="secondary" onClick={() => void refreshAccounts()} disabled={isLoading || busyAccount !== null}>
             {isLoading ? 'Carregando...' : 'Atualizar'}
           </Button>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {accounts.map((account) => (
-            <div key={account.unit} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 p-3">
-              <div>
-                <p className="font-medium text-slate-900">Casa {account.unit}</p>
-                <p className="text-xs text-slate-500">{account.username} · {account.exists ? 'Conta criada' : 'Sem conta'}</p>
-              </div>
-              {account.exists && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="shrink-0 px-3 py-2 text-xs"
-                  onClick={() => void handleReset(account)}
-                  disabled={busyUnit !== null}
-                >
-                  {busyUnit === account.unit ? 'Aguarde...' : 'Resetar senha'}
-                </Button>
+            <div key={account.unit} className="rounded-2xl border border-slate-200 p-3">
+              <p className="mb-2 font-medium text-slate-900">Casa {account.unit}</p>
+              {account.residents.length === 0 ? (
+                <p className="text-xs text-slate-500">Nenhum morador cadastrado.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {account.residents.map((resident) => (
+                    <li key={resident.id} className="flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-800">{resident.name}</p>
+                        <p className="truncate text-xs text-slate-500">{resident.email}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="shrink-0 px-3 py-2 text-xs"
+                        onClick={() => void handleReset(account.unit, resident)}
+                        disabled={busyAccount !== null}
+                      >
+                        {busyAccount === resident.id ? 'Aguarde...' : 'Resetar senha'}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           ))}

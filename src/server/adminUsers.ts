@@ -2,8 +2,8 @@ import { createClient, type User } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import {
   parseResidentUnit,
-  residentEmail,
-  residentUnitFromEmail,
+  residentEmailForName,
+  residentUnitFromUser,
   residentUsername,
   RESIDENT_ACCOUNT_PASSWORD,
 } from '../utils/residentAccounts.js';
@@ -99,11 +99,6 @@ const listAuthUsers = async (): Promise<User[]> => {
   }
 };
 
-const findResidentUser = async (unit: number): Promise<User | undefined> => {
-  const email = residentEmail(unit);
-  return (await listAuthUsers()).find((user) => user.email?.toLowerCase() === email);
-};
-
 export const listResidentAccounts = async (req: VercelRequest, res: VercelResponse) => {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
@@ -116,16 +111,30 @@ export const listResidentAccounts = async (req: VercelRequest, res: VercelRespon
 
   try {
     const users = await listAuthUsers();
-    const occupiedUnits = new Set<number>();
+    const residentsByUnit = new Map<number, Array<{ id: string; name: string; email: string }>>();
     for (const user of users) {
-      const unit = residentUnitFromEmail(user.email);
-      if (unit !== null) occupiedUnits.add(unit);
+      const unit = residentUnitFromUser(user);
+      const role = user.app_metadata?.role ?? user.user_metadata?.role;
+      if (unit === null || role !== 'morador' || !user.email) continue;
+
+      const residents = residentsByUnit.get(unit) ?? [];
+      residents.push({
+        id: user.id,
+        name: typeof user.user_metadata?.full_name === 'string'
+          ? user.user_metadata.full_name
+          : user.email.split('@')[0],
+        email: user.email,
+      });
+      residentsByUnit.set(unit, residents);
     }
 
     return res.status(200).json({
       units: Array.from({ length: 48 }, (_, index) => {
         const unit = index + 1;
-        return { unit, username: residentUsername(unit), exists: occupiedUnits.has(unit) };
+        return {
+          unit,
+          residents: residentsByUnit.get(unit) ?? [],
+        };
       }),
     });
   } catch (error) {
@@ -150,35 +159,49 @@ export const createResidentAccount = async (req: VercelRequest, res: VercelRespo
     return sendApiError(res, 400, 'Informe uma unidade inteira entre 1 e 48.');
   }
 
+  const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : '';
+  if (fullName.length < 2 || fullName.length > 80) {
+    return sendApiError(res, 400, 'Informe um nome com entre 2 e 80 caracteres.');
+  }
+
+  const email = residentEmailForName(fullName);
+  if (!email) {
+    return sendApiError(res, 400, 'O nome precisa conter pelo menos uma letra ou número.');
+  }
+
   try {
-    if (await findResidentUser(unit)) {
-      return sendApiError(res, 409, `A conta casa${unit} já existe.`);
+    const users = await listAuthUsers();
+    if (users.some((user) => user.email?.toLowerCase() === email)) {
+      return sendApiError(res, 409, `Já existe uma conta com o login ${email}. Informe nome e sobrenome para diferenciar.`);
     }
 
-    const username = residentUsername(unit);
     const { error } = await admin.auth.admin.createUser({
-      email: residentEmail(unit),
+      email,
       password: RESIDENT_ACCOUNT_PASSWORD,
       email_confirm: true,
-      user_metadata: { username, full_name: `Morador - Casa ${unit}`, unit },
-      app_metadata: { role: 'morador', must_change_password: true },
+      user_metadata: { username: email.split('@')[0], full_name: fullName, unit },
+      app_metadata: { role: 'morador', unit, must_change_password: true },
     });
     if (error) {
-      console.error(`Failed to create resident account casa${unit}:`, error.message);
+      console.error(`Failed to create resident account for unit ${unit}:`, error.message);
       const alreadyExists = /already|exists/i.test(error.message);
       return sendApiError(res, alreadyExists ? 409 : 500, alreadyExists
-        ? 'Esta conta já existe. Atualize a lista de unidades.'
+        ? `Já existe uma conta com o login ${email}. Informe nome e sobrenome para diferenciar.`
         : 'Não foi possível criar a conta. Verifique a configuração do Supabase Auth.');
     }
 
-    return res.status(201).json({ unit, username, temporaryPassword: RESIDENT_ACCOUNT_PASSWORD });
+    return res.status(201).json({ unit, username: email, temporaryPassword: RESIDENT_ACCOUNT_PASSWORD });
   } catch (error) {
-    console.error(`Failed to create resident account casa${unit}:`, error);
+    console.error(`Failed to create resident account for unit ${unit}:`, error);
     return sendApiError(res, 500, 'Não foi possível criar a conta. Verifique a configuração do Supabase Auth.');
   }
 };
 
-export const resetResidentAccountPassword = async (req: VercelRequest, res: VercelResponse) => {
+export const resetResidentAccountPassword = async (
+  req: VercelRequest,
+  res: VercelResponse,
+  residentUserId?: string,
+) => {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return sendApiError(res, 405, 'Método não permitido.');
@@ -189,15 +212,34 @@ export const resetResidentAccountPassword = async (req: VercelRequest, res: Verc
   const admin = requireAdminClient(res);
   if (!admin) return;
 
-  const unit = parseResidentUnit(req.query.unit);
-  if (unit === null) {
-    return sendApiError(res, 400, 'Informe uma unidade inteira entre 1 e 48.');
-  }
+  const userId = residentUserId ?? (typeof req.query.id === 'string' ? req.query.id : '');
 
   try {
-    const user = await findResidentUser(unit);
-    if (!user || (user.app_metadata?.role !== 'morador' && user.user_metadata?.role !== 'morador')) {
-      return sendApiError(res, 404, `Não foi encontrada uma conta de morador para casa${unit}.`);
+    let user: User | undefined;
+    if (userId) {
+      const { data, error: findError } = await admin.auth.admin.getUserById(userId);
+      if (findError || !data.user) {
+        return sendApiError(res, 404, 'A conta de morador não foi encontrada.');
+      }
+      user = data.user;
+    } else {
+      const unit = parseResidentUnit(req.query.unit);
+      if (unit === null) {
+        return sendApiError(res, 400, 'Informe a conta de morador que deseja redefinir.');
+      }
+      user = (await listAuthUsers()).find((candidate) =>
+        residentUnitFromUser(candidate) === unit
+        && (candidate.app_metadata?.role === 'morador' || candidate.user_metadata?.role === 'morador'),
+      );
+    }
+
+    if (!user) return sendApiError(res, 404, 'A conta de morador não foi encontrada.');
+    const unit = residentUnitFromUser(user);
+    if (
+      unit === null
+      || (user.app_metadata?.role !== 'morador' && user.user_metadata?.role !== 'morador')
+    ) {
+      return sendApiError(res, 404, 'A conta selecionada não pertence a um morador.');
     }
 
     const { error } = await admin.auth.admin.updateUserById(user.id, {
@@ -205,19 +247,23 @@ export const resetResidentAccountPassword = async (req: VercelRequest, res: Verc
       app_metadata: { ...user.app_metadata, role: 'morador', must_change_password: true },
     });
     if (error) {
-      console.error(`Failed to reset password for casa${unit}:`, error.message);
+      console.error(`Failed to reset resident password for unit ${unit}:`, error.message);
       return sendApiError(res, 500, 'Não foi possível redefinir a senha desta unidade.');
     }
 
     const { error: signOutError } = await admin.auth.admin.signOut(user.id, 'global');
     if (signOutError) {
-      console.error(`Password reset but session revocation failed for casa${unit}:`, signOutError.message);
+      console.error(`Password reset but session revocation failed for resident account ${user.id}:`, signOutError.message);
       return sendApiError(res, 500, 'Senha redefinida, mas as sessões existentes não foram encerradas. Contate o suporte.');
     }
 
-    return res.status(200).json({ unit, username: residentUsername(unit), temporaryPassword: RESIDENT_ACCOUNT_PASSWORD });
+    return res.status(200).json({
+      unit,
+      username: user.email ?? residentUsername(unit),
+      temporaryPassword: RESIDENT_ACCOUNT_PASSWORD,
+    });
   } catch (error) {
-    console.error(`Failed to reset password for casa${unit}:`, error);
+    console.error(`Failed to reset resident account ${userId || 'by unit'}:`, error);
     return sendApiError(res, 500, 'Não foi possível redefinir a senha desta unidade.');
   }
 };
@@ -245,8 +291,12 @@ export const changeRequiredPassword = async (req: VercelRequest, res: VercelResp
     }
 
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : '';
     if (password.length < 8 || password.length > 128) {
       return sendApiError(res, 400, 'A nova senha deve ter entre 8 e 128 caracteres.');
+    }
+    if (fullName.length < 2 || fullName.length > 80) {
+      return sendApiError(res, 400, 'Informe um nome com entre 2 e 80 caracteres.');
     }
     if (password === RESIDENT_ACCOUNT_PASSWORD) {
       return sendApiError(res, 400, 'Escolha uma senha diferente da senha temporária.');
@@ -255,6 +305,7 @@ export const changeRequiredPassword = async (req: VercelRequest, res: VercelResp
     const { error: updateError } = await admin.auth.admin.updateUserById(data.user.id, {
       password,
       app_metadata: { ...data.user.app_metadata, must_change_password: false },
+      user_metadata: { ...data.user.user_metadata, full_name: fullName },
     });
     if (updateError) {
       console.error('Failed to complete required password change:', updateError.message);

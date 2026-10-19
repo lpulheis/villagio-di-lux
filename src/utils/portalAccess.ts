@@ -8,6 +8,7 @@ export const residentRoutes = [
   '/contatos',
   '/sugestoes',
   '/apps',
+  '/perfil',
 ];
 
 export const adminRoutes = [
@@ -28,7 +29,7 @@ export const getNavigationItems = (role: PortalRole | null | undefined): string[
     return ['/admin', '/admin/horarios', '/admin/cronograma', '/admin/contatos', '/admin/sugestoes', '/admin/apps'];
   }
 
-  return ['/inicio', '/horarios', '/cronograma', '/contatos', '/sugestoes', '/apps'];
+  return ['/inicio', '/horarios', '/cronograma', '/contatos', '/sugestoes', '/apps', '/perfil'];
 };
 
 export const normalizeRoute = (value: string): string => {
@@ -45,6 +46,10 @@ export const canAccessRoute = (role: PortalRole | null | undefined, route: strin
 
   if (normalized === '/login') {
     return false;
+  }
+
+  if (normalized === '/perfil') {
+    return role === 'morador';
   }
 
   if (normalized === '/admin/usuarios') {

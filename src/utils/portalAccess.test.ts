@@ -6,6 +6,9 @@ import { canAccessRoute, getNavigationItems, normalizeRoute } from './portalAcce
 
 test('morador can access public resident routes only', () => {
   assert.equal(canAccessRoute('morador', '/inicio'), true);
+  assert.equal(canAccessRoute('morador', '/perfil'), true);
+  assert.equal(canAccessRoute('admin', '/perfil'), false);
+  assert.equal(canAccessRoute('sindico', '/perfil'), false);
   assert.equal(canAccessRoute('morador', '/admin'), false);
   assert.equal(canAccessRoute('morador', '/login'), false);
   assert.equal(canAccessRoute('morador', '/avisos'), false);
@@ -36,6 +39,7 @@ test('management roles expose admin navigation items while residents keep public
   assert.ok(!getNavigationItems('admin').includes('/admin/dashboard'));
   assert.ok(!getNavigationItems('admin').includes('/admin/avisos'));
   assert.ok(getNavigationItems('morador').includes('/inicio'));
+  assert.ok(getNavigationItems('morador').includes('/perfil'));
   assert.ok(!getNavigationItems('morador').includes('/admin/contatos'));
   assert.ok(!getNavigationItems('morador').includes('/avisos'));
 });
